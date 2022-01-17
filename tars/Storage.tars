@@ -1,0 +1,138 @@
+
+module Base
+{
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// 数据存储服务, 设计说明
+// - 使用c++, 底层数据存储用rockesdb, 实现mkey+ukey+data的存储方式
+// - rocksdb使用raft多机热备, 后期可以考虑, 根据主key, 分多机存储
+// - 注意mkey/skey只能使用字符串(不能用二进制数据!!!), 按照从小到大排序
+// - 数据格式: mk+uk->data
+// - 支持set/get/del 以及对应的批量操作
+// - 写数据都转发到leader, 查询可以指定是否在leader执行(保证刚写进去能马上查到), 但是总在leader运行, 会影响效率!!
+// - 支持数据version版本一致性
+// - 支持基于时间戳的覆盖(只能更大的时间戳覆盖小时间错的数据)
+// - 支持超时自动淘汰
+///////////////////////////////////////////////////////////////////////////////////////////
+
+enum STORAGE_RT
+{
+    S_OK = 0,               //成功
+    S_NO_DATA = -1,         //没有数据
+    S_ERROR = -2,           //失败
+    S_VERSION = -3,         //版本冲突
+    S_TIMESTAMP = -4,       //时间戳冲突
+    S_TABLE_NAME = -5,      //表名不合法(为空)
+    S_TABLE_EXIST = -6,     //表已经存在
+    S_TABLE_NOT_EXIST = -7, //表不存在
+};
+
+struct Options
+{
+    0 optional bool leader = false; //选项, true: 必须在leader执行, false: follower都可以执行
+};
+
+struct StorageKey
+{
+    0 optional string table;    //表名
+    1 optional string mkey;     //主key
+    2 optional string ukey;     //子key
+};
+
+key[StorageKey, mkey, ukey];
+
+//version timestamp 只有一个能生效, 优先version
+struct StorageValue
+{
+    0 optional int expireTime = 0; //淘汰时间(相对时间, 秒), ==0 忽略淘汰(不淘汰)
+    1 optional int version = 0;     //版本号, 读取时框架自动返回(不为0), set时需要将读取到的version设置回存储(存储服务发现version不相等则不让写入), 如果version设置为0, 则总是同意写入
+    2 optional long timestamp = 0;  //写数据的时间戳: ==0忽略这个字段的使用;  >0增加时间戳判断, 更大的timestamp才能覆盖老数据
+    3 optional vector<byte> data;
+};
+
+struct StorageData
+{
+    0 optional StorageKey skey;
+    1 optional StorageValue svalue;
+    2 optional int ret = 0;             //set时无效, getBatch时用来判断数据是否获取到 (STORAGE_RT)
+};
+
+//分页查询, 必须指定mkey
+//forword: true, 则表示从小到大, 数据[mkey-ukey, ...), 开始往后遍历limit个, 如果ukey为空, 则表示mkey-头开始遍历
+//forword: false, 则表示从大到小, 数据(..., mkey-ukey], 开始往前遍历limit个
+struct PageReq
+{
+    0 optional StorageKey skey;
+    1 optional int limit = 10;
+    2 optional bool forword = true;
+    3 optional bool include = true;
+};
+
+interface Storage
+{
+    /**
+     * 创建表
+     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     */
+    int createTable(string table);
+
+    /**
+     * 是否有数据
+     * @return opt
+     * @return int, S_OK: 成功, S_NO_DATA: 没有数据, S_ERROR: 系统错误!
+     */
+    int has(Options opt, StorageKey skey);
+
+    /**
+     * 读取数据
+     * @return opt
+     * @return int, S_OK: 成功, S_NO_DATA: 没有数据, S_ERROR: 系统错误!
+     */
+    int get(Options opt, StorageKey skey, out StorageValue data);
+
+    /**
+     * 写数据(StorageData.ret无效)
+     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     */    
+    int set(StorageData data);
+
+    /**
+     * 删除数据(注意如果ukey为空, 则删除所有mkey的数据)
+     * @return int, S_OK: 成功, S_NO_DATA: 没有数据, S_ERROR: 系统错误!
+     */
+    int del(StorageKey skey);
+
+    /**
+     * 读取数据, 每条记录StorageData.ret 表示数据是否成功: S_OK: 成功, S_NO_DATA: 没有数据, S_ERROR: 系统错误
+     * @return opt
+     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     */
+    int getBatch(Options opt, vector<StorageKey> skey, out vector<StorageData> data);
+
+    /**
+     * 写数据, 每条记录是否更新成功, 可以遍历ret获取到(S_OK/S_VERSION/S_TIMESTAMP/S_TABLE_NAME/S_TABLE_NOT_EXIST)
+     * @return int, S_OK: 成功(所有数据都写入成功), S_ERROR: 错误(至少有一条数据写入失败)
+     */    
+    int setBatch(vector<StorageData> data, out map<StorageKey, int> rsp);
+
+    /**
+     * 批量查询是否有数据, 每条记录是否更新成功, 可以遍历ret获取到(S_OK/S_NO_DATA/S_TIMESTAMP/S_TABLE_NAME/S_TABLE_NOT_EXIST)
+     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     */
+    int hasBatch(Options opt, vector<StorageKey> data, out map<StorageKey, int> rsp);
+
+    /**
+     * 批量删除数据(注意如果ukey为空, 则删除所有mkey的数据)
+     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     */
+    int delBatch(vector<StorageKey> skey);
+
+    /**
+     * 根据主key, 分页遍历数据, 下一次传入上次返回的ukey, 第一次ukey传入空
+     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     */
+    int trans(Options opt, PageReq req, out vector<StorageData> data);
+
+};
+
+}; 

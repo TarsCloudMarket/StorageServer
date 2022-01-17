@@ -1,0 +1,59 @@
+cloud:
+  group: Base
+  name: storageserver
+  logo: assets/logo.png
+  version: latest
+  changelist: Changelist.md
+  lang: cpp
+  description: >-
+    The storage service of key value mode is implemented based on raft, which
+    can realize the data consistency of multiple machines (greater than or equal
+    to 3 machines)
+  collaborators:
+    - ruanshudong@qq.com
+  repository: https://github.com/TarsCloudMarket/StorageServer.git
+  readme: README.md
+  protocols:
+    - tars/Storage.tars
+  assets: 
+    - assets
+app: Base 
+server: StorageServer
+template: tars.cpp
+profile: ''
+servants:
+  - name: RaftObj
+    port: 10000
+    isTars: true
+    isTcp: true
+    thread: 2
+    capacity: 100000
+    connection: 10000
+    timeout: 30000
+  - name: StorageObj
+    port: 20000
+    isTars: true
+    isTcp: true
+    thread: 5
+    capacity: 100000
+    connection: 100000
+    timeout: 60000
+replicas: 3
+hostNetwork: false
+hostIPC: false
+hostPorts: []
+repo:
+  id: null
+  image: docker.tarsyun.com/tars/storageserver:latest
+  secret: cloud-market-secret
+mounts:
+  - name: storage-data
+    mountPath: /storage-data
+    source:
+      tLocalVolume: {}
+config:
+  - name: storage.conf
+    content: |
+      <root>
+        storage-path=/storage-data
+      </root>
