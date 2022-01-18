@@ -31,11 +31,6 @@ jobs:
         with:
           path: build
           key: ${{ runner.os }}-build-${{ env.cache-name }}
-      - name: Install SSH Key
-        uses: shimataro/ssh-key-action@v2
-        with:
-          key: ${{ secrets.ACTION_DEPLOY_KEY }} 
-          known_hosts: ${{ secrets.ACTION_KNOWN_HOSTS }} 
       - name: make
         run: mkdir -p build && cd build && cmake .. && make -j8
       - name: build docker
