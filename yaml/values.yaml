@@ -9,10 +9,13 @@ cloud:
     The storage service of key value mode is implemented based on raft, which
     can realize the data consistency of multiple machines (greater than or equal
     to 3 machines)
+  description_cn: >-
+    使用raft, rocksdb, tars服务构建的存储服务, 至少3节点, 可以保证多节点的数据的一致性.
   collaborators:
     - ruanshudong@qq.com
   repository: https://github.com/TarsCloudMarket/StorageServer.git
-  readme: README.md
+  readme: README.en.md
+  readme_cn: README.md
   protocols:
     - tars/Storage.tars
   assets: 
