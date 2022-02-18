@@ -267,21 +267,41 @@ void StorageStateMachine::close()
 
 void StorageStateMachine::onBecomeLeader(int64_t term)
 {
+	TARS_NOTIFY_NORMAL("become leader, term:" + TC_Common::tostr(term));
 	TLOG_DEBUG("term:" << term << endl);
 }
 
 void StorageStateMachine::onBecomeFollower()
 {
+	TARS_NOTIFY_NORMAL("become follower");
+
 	TLOG_DEBUG("onBecomeFollower" << endl);
+}
+
+void StorageStateMachine::onStartElection(int64_t term)
+{
+	TARS_NOTIFY_NORMAL("start election");
+}
+
+void StorageStateMachine::onJoinCluster()
+{
+	TARS_NOTIFY_NORMAL("join cluster");
+}
+
+void StorageStateMachine::onLeaveCluster()
+{
+	TARS_NOTIFY_NORMAL("leave cluster");
 }
 
 void StorageStateMachine::onBeginSyncShapshot()
 {
+	TARS_NOTIFY_NORMAL("begin sync shapshot");
 	TLOG_DEBUG("onBeginSyncShapshot" << endl);
 }
 
 void StorageStateMachine::onEndSyncShapshot()
 {
+	TARS_NOTIFY_NORMAL("end sync shapshot");
 	TLOG_DEBUG("onEndSyncShapshot" << endl);
 }
 

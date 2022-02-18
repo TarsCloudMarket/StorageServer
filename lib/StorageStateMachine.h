@@ -81,6 +81,23 @@ public:
 	virtual void onBecomeFollower();
 
 	/**
+	 * 开始选举的回调
+	 * @param term 选举轮数
+	 */
+	virtual void onStartElection(int64_t term);
+
+	/**
+	 * 节点加入集群(Leader or Follower) & LeaderId 已经设置好!
+	 * 此时能够正常对外提供服务了, 对于Follower收到请求也可以转发给Leader了
+	 */
+	virtual void onJoinCluster();
+	/**
+	 * 节点离开集群(重新发起投票, LeaderId不存在了)
+	 * 此时无法正常对外提供服务了, 请求不能发送到当前节点
+	 */
+	virtual void onLeaveCluster();
+
+	/**
 	* 开始从Leader同步快照文件
 	*/
 	virtual void onBeginSyncShapshot();
