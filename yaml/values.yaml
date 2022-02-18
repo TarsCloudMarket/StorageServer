@@ -58,5 +58,13 @@ config:
   - name: storage.conf
     content: |
       <root>
+        <raft>
+          	electionTimeoutMilliseconds = 3000
+            heartbeatPeriodMilliseconds = 300
+            snapshotPeriodSeconds       = 6000
+            maxLogEntriesPerRequest     = 100
+            maxLogEntriesMemQueue       = 3000
+            maxLogEntriesTransfering    = 1000
+        </raft>
         storage-path=/storage-data
       </root>

@@ -29,15 +29,18 @@ void StorageServer::initialize()
 
 	LOG_CONSOLE_DEBUG << "data path:" << ServerConfig::DataPath << ", index:" << _index << ", node size:" << _nodeInfo.nodes.size() << endl;
 
-	RaftOptions raftOptions;
-	raftOptions.electionTimeoutMilliseconds = 1000;
-	raftOptions.heartbeatPeriodMilliseconds = 300;
+	addConfig("storage.conf");
+	TC_Config conf;
+	conf.parseFile(ServerConfig::BasePath + "storage.conf");
 
+	RaftOptions raftOptions;
+	raftOptions.electionTimeoutMilliseconds = TC_Common::strto<int>(conf.get("/root/raft<electionTimeoutMilliseconds>", "3000"));
+	raftOptions.heartbeatPeriodMilliseconds = TC_Common::strto<int>(conf.get("/root/raft<electionTimeoutMilliseconds>", "300"));
+	raftOptions.snapshotPeriodSeconds       = TC_Common::strto<int>(conf.get("/root/raft<snapshotPeriodSeconds>", "600"));
+	raftOptions.maxLogEntriesPerRequest     = TC_Common::strto<int>(conf.get("/root/raft<snapshotPeriodSeconds>", "100"));
+	raftOptions.maxLogEntriesMemQueue       = TC_Common::strto<int>(conf.get("/root/raft<snapshotPeriodSeconds>", "3000"));
+	raftOptions.maxLogEntriesTransfering    = TC_Common::strto<int>(conf.get("/root/raft<snapshotPeriodSeconds>", "1000"));
 	raftOptions.dataDir                     = dataPath + "raft-log-" + TC_Common::tostr(_index);
-	raftOptions.snapshotPeriodSeconds       = 600;
-	raftOptions.maxLogEntriesPerRequest     = 100;
-	raftOptions.maxLogEntriesMemQueue       = 3000;
-	raftOptions.maxLogEntriesTransfering    = 1000;
 
 	onInitializeRaft(raftOptions, "StorageObj", dataPath + "StorageLog-" + TC_Common::tostr(_index));
 }
