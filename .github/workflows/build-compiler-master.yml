@@ -21,10 +21,10 @@ jobs:
           registry: docker.tarsyun.com
           username: ${{ secrets.name }}
           password: ${{ secrets.pass }}
-          token: ${{ secrets.MY_TOKEN }}
       - uses: actions/checkout@v2
         with:
           submodules: true
+          token: ${{ secrets.MY_TOKEN }}
       - uses: satackey/action-docker-layer-caching@v0.0.11
         continue-on-error: true
       - name: Cache build modules
