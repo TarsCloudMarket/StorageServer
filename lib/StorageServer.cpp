@@ -13,7 +13,7 @@ void StorageServer::initialize()
 	string dataPath;
 	TC_Config conf;
 
-	LOG_CONSOLE_DEBUG << "data path:" << ServerConfig::DataPath << endl;
+//	LOG_CONSOLE_DEBUG << "data path:" << ServerConfig::DataPath << endl;
 
 	//for debug
 	if(ServerConfig::DataPath == "./debug-data/")
@@ -36,7 +36,6 @@ void StorageServer::initialize()
 
 	LOG_CONSOLE_DEBUG << "data path:" << ServerConfig::DataPath << ", index:" << _index << ", node size:" << _nodeInfo.nodes.size() << endl;
 
-
 	RaftOptions raftOptions;
 	raftOptions.electionTimeoutMilliseconds = TC_Common::strto<int>(conf.get("/root/raft<electionTimeoutMilliseconds>", "3000"));
 	raftOptions.heartbeatPeriodMilliseconds = TC_Common::strto<int>(conf.get("/root/raft<heartbeatPeriodMilliseconds>", "300"));
@@ -45,6 +44,14 @@ void StorageServer::initialize()
 	raftOptions.maxLogEntriesMemQueue       = TC_Common::strto<int>(conf.get("/root/raft<maxLogEntriesMemQueue>", "3000"));
 	raftOptions.maxLogEntriesTransfering    = TC_Common::strto<int>(conf.get("/root/raft<maxLogEntriesTransfering>", "1000"));
 	raftOptions.dataDir                     = TC_File::simplifyDirectory(dataPath + FILE_SEP + "raft-log-" + TC_Common::tostr(_index));
+
+	TLOG_DEBUG("electionTimeoutMilliseconds:" << raftOptions.electionTimeoutMilliseconds << endl);
+	TLOG_DEBUG("heartbeatPeriodMilliseconds:" << raftOptions.heartbeatPeriodMilliseconds << endl);
+	TLOG_DEBUG("snapshotPeriodSeconds:" << raftOptions.snapshotPeriodSeconds << endl);
+	TLOG_DEBUG("maxLogEntriesPerRequest:" << raftOptions.maxLogEntriesPerRequest << endl);
+	TLOG_DEBUG("maxLogEntriesMemQueue:" << raftOptions.maxLogEntriesMemQueue << endl);
+	TLOG_DEBUG("maxLogEntriesTransfering:" << raftOptions.maxLogEntriesTransfering << endl);
+	TLOG_DEBUG("dataDir:" << raftOptions.dataDir << endl);
 
 	onInitializeRaft(raftOptions, "StorageObj", TC_File::simplifyDirectory(dataPath + FILE_SEP + "StorageLog-" + TC_Common::tostr(_index)));
 }
