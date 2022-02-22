@@ -16,6 +16,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti")
 
 include_directories(/usr/local/tars/cpp/thirdparty/include)
 link_directories(/usr/local/tars/cpp/thirdparty/lib)
+link_directories(/usr/local/tars/cpp/thirdparty/lib64)
 
 include_directories(tars)
 include_directories(libraft)
