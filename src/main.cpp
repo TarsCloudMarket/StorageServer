@@ -10,40 +10,33 @@ int main(int argc, char* argv[])
 {
 	try
 	{
-		// TC_Option option;
-		// option.decode(argc, argv);
-
-		// if(option.hasParam("obj"))
-		// {
-		// 	TC_Config conf;
-		// 	conf.parseFile(option.getValue("config"));
-
-		// 	Communicator communicator;
-		// 	communicator.setProperty(conf);
-
-		// 	QueryFPrx prx= communicator.stringToProxy<QueryFPrx>("tars.tarsregistry.QueryObj");
-
-		// 	vector<tars::EndpointF> activeEp;
-		// 	vector<tars::EndpointF> inActiveEp;
-
-		// 	int ret = prx->findObjectById4All(option.getValue("obj"), activeEp, inActiveEp);
-
-		// 	LOG_CONSOLE_DEBUG << "ret:" << ret << endl;
-		// 	LOG_CONSOLE_DEBUG << "active---------------------------------------size:" << activeEp.size() << endl;
-
-		// 	for(auto ep : activeEp)
-		// 	{
-		// 		LOG_CONSOLE_DEBUG << ep.host << ":" << ep.port << endl;
-		// 	}
-
-		// 	LOG_CONSOLE_DEBUG << "inactive-------------------------------------size:" << inActiveEp.size() << endl;
-		// 	for(auto ep : inActiveEp)
-		// 	{
-		// 		LOG_CONSOLE_DEBUG << ep.host << ":" << ep.port << endl;
-		// 	}
-
-		// 	exit(0);
-		// }
+//		 TC_Option option;
+//		 option.decode(argc, argv);
+//
+//		 if(option.hasParam("obj"))
+//		 {
+//			 Communicator communicator;
+//
+//			 ServantPrx prx= communicator.stringToProxy<ServantPrx>("Hospital.StorageServer.RaftObj@tcp -h hospital-storageserver-2.hospital-storageserver -p 10000");
+//
+//			 while(true)
+//			 {
+//				 try
+//				 {
+//					 prx->tars_ping();
+//
+//					 LOG_CONSOLE_DEBUG << "succ" << endl;
+//				 }
+//				 catch (exception &ex)
+//				 {
+//					 LOG_CONSOLE_DEBUG << "error:" << ex.what() << endl;
+//				 }
+//
+//				 TC_Common::msleep(100);
+//			 }
+//
+//			 exit(0);
+//		 }
 
 		g_app.main(argc, argv);
 
