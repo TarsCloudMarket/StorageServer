@@ -35,7 +35,7 @@ jobs:
           path: build 
           key: ${{ runner.os }}-build-${{ env.cache-name }}
       - name: make
-        run: mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j8
+        run: mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && make ls-snappy && make -j8
       - name: build docker
         run: |
           exec-build-cloud.sh tarscloud/tars.cppbase cpp build/bin/StorageServer yaml/values.yaml latest true
