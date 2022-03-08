@@ -32,6 +32,7 @@ public:
 	const static string DEL_TYPE  ;
 	const static string BDEL_TYPE ;
 	const static string TABLE_TYPE;
+	const static string SET_JSON_TYPE  ;
 	/**
 	 * 构造
 	 * @param dataPath
@@ -180,6 +181,7 @@ protected:
 	int checkStorageData(rocksdb::ColumnFamilyHandle* handle, const StorageData &data);
 	bool isExpire(TarsInputStream<> &is);
 	void onSet(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onUpdate(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onSetBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onDel(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onDelBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);

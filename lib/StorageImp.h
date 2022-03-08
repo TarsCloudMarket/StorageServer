@@ -46,6 +46,11 @@ public:
      */    
     virtual int set(const StorageData &data, CurrentPtr current);
 
+	/**
+	 * 写数据
+	 */
+	virtual int update(const StorageJson &data, CurrentPtr current);
+
     /**
      * 删除数据
      */

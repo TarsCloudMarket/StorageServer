@@ -20,6 +20,7 @@ const string StorageStateMachine::BSET_TYPE = "2";
 const string StorageStateMachine::DEL_TYPE  = "3";
 const string StorageStateMachine::BDEL_TYPE = "4";
 const string StorageStateMachine::TABLE_TYPE = "5";
+const string StorageStateMachine::SET_JSON_TYPE = "6";
 
 //////////////////////////////////////////////////////////////////////////////////////
 class TTLCompactionFilter : public rocksdb::CompactionFilter
@@ -105,6 +106,7 @@ StorageStateMachine::StorageStateMachine(const string &dataPath)
 	_onApply[DEL_TYPE] = std::bind(&StorageStateMachine::onDel, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[BDEL_TYPE] = std::bind(&StorageStateMachine::onDelBatch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[TABLE_TYPE] = std::bind(&StorageStateMachine::onCreateTable, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[SET_JSON_TYPE] = std::bind(&StorageStateMachine::onUpdate, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 }
 
 StorageStateMachine::~StorageStateMachine()
@@ -847,6 +849,138 @@ void StorageStateMachine::onSet(TarsInputStream<> &is, int64_t appliedIndex, con
 		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response succ, ret:" << ret << endl);
 
 		Storage::async_response_set(callback->getCurrentPtr(), ret);
+	}
+}
+
+void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	StorageJson update;
+
+	is.read(update, 1, false);
+
+	TLOG_DEBUG("table:" << update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey
+						<< ", appliedIndex:" << appliedIndex << ", update:" << TC_Common::tostr(update.supdate.begin(), update.supdate.end(), " ") << endl);
+
+	int ret = S_OK;
+
+	auto handle = get(update.skey.table);
+
+	if(!handle)
+	{
+		TLOG_ERROR("table:" << update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", table not exists" << endl);
+
+		ret = S_TABLE_NOT_EXIST;
+	}
+	else
+	{
+		std::string value;
+		auto key = tokey(update.skey);
+		rocksdb::Status s = _db->Get(rocksdb::ReadOptions(), handle, rocksdb::Slice(key->data, key->length), &value);
+		if (s.ok())
+		{
+			StorageValue data;
+
+			TarsInputStream<> is;
+			is.setBuffer(value.c_str(), value.length());
+
+			data.readFrom(is);
+
+			JsonValueObjPtr json = JsonValueObjPtr::dynamicCast(TC_Json::getValue(data.data));
+
+			if(!json)
+			{
+				ret = S_ERROR;
+			}
+			else
+			{
+				for(auto &e : update.supdate)
+				{
+					auto it = json->value.find(e.first);
+					if(it != json->value.end())
+					{
+
+						switch (it->second->getType())
+						{
+						case eJsonTypeString:
+						{
+							JsonValueStringPtr p = JsonValueStringPtr::dynamicCast(it->second);
+							p->value = e.second;
+							break;
+						}
+						case eJsonTypeNum:
+						{
+							JsonValueNumPtr p = JsonValueNumPtr::dynamicCast(it->second);
+							if (p->isInt)
+							{
+								p->lvalue = TC_Common::strto<int64_t>(e.second);
+							}
+							else
+							{
+								p->value = TC_Common::strto<double>(e.second);
+							}
+							break;
+						}
+						case eJsonTypeObj:
+						case eJsonTypeArray:
+						{
+							ret = S_JSON_DATA_NOT_SUPPORT;
+							break;
+						}
+						case eJsonTypeBoolean:
+						{
+							JsonValueBooleanPtr p = JsonValueBooleanPtr::dynamicCast(it->second);
+							if (TC_Port::strcasecmp(e.second.c_str(), "true") == 0)
+							{
+								p->value = true;
+							}
+							else if (TC_Port::strcasecmp(e.second.c_str(), "false") == 0)
+							{
+								p->value = false;
+							}
+							else
+							{
+								ret = S_JSON_DATA_NOT_SUPPORT;
+							}
+							break;
+						}
+						case eJsonTypeNull:
+						{
+							ret = S_JSON_DATA_NOT_SUPPORT;
+							break;
+						}
+						}
+					}
+				}
+
+				if(ret == S_OK)
+				{
+					string buff = TC_Json::writeValue(json);
+
+					rocksdb::WriteBatch batch;
+
+					batch.Put(handle, rocksdb::Slice(key->data, key->length), rocksdb::Slice(buff.c_str(), buff.length()));
+
+					writeBatch(batch, appliedIndex);
+				}
+			}
+		}
+		else if(s.IsNotFound())
+		{
+			ret = S_OK;
+		}
+		else
+		{
+			TLOG_ERROR("Get: " << update.skey.mkey + "-" + update.skey.ukey << ", error:" << s.ToString() << endl);
+
+			ret = S_ERROR;
+		}
+	}
+
+	if(callback)
+	{
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response succ, ret:" << ret << endl);
+
+		Storage::async_response_update(callback->getCurrentPtr(), ret);
 	}
 }
 
