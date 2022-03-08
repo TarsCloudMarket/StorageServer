@@ -861,7 +861,7 @@ void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, 
 	TLOG_DEBUG("table:" << update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey
 						<< ", appliedIndex:" << appliedIndex << ", update:" << TC_Common::tostr(update.supdate.begin(), update.supdate.end(), " ") << endl);
 
-	int ret = S_OK;
+	STORAGE_RT ret = S_OK;
 
 	auto handle = get(update.skey.table);
 
@@ -895,28 +895,74 @@ void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, 
 			{
 				for(auto &e : update.supdate)
 				{
-					auto it = json->value.find(e.first);
+					if(ret != S_OK)
+					{
+						break;
+					}
+
+					auto it = json->value.find(e.field);
 					if(it != json->value.end())
 					{
-
 						switch (it->second->getType())
 						{
 						case eJsonTypeString:
 						{
 							JsonValueStringPtr p = JsonValueStringPtr::dynamicCast(it->second);
-							p->value = e.second;
+
+							if(e.op == SO_REPLACE)
+							{
+								p->value = e.value;
+							}
+							else if(e.op == Base::SO_APPEND)
+							{
+								p->value += e.value;
+							}
+							else
+							{
+								ret = S_JSON_OPERATOR_NOT_SUPPORT;
+							}
 							break;
 						}
 						case eJsonTypeNum:
 						{
 							JsonValueNumPtr p = JsonValueNumPtr::dynamicCast(it->second);
-							if (p->isInt)
+
+							if(e.op == SO_REPLACE)
 							{
-								p->lvalue = TC_Common::strto<int64_t>(e.second);
+								if (p->isInt)
+								{
+									p->lvalue = TC_Common::strto<int64_t>(e.value);
+								}
+								else
+								{
+									p->value = TC_Common::strto<double>(e.value);
+								}
+							}
+							else if(e.op == Base::SO_ADD)
+							{
+								if (p->isInt)
+								{
+									p->lvalue += TC_Common::strto<int64_t>(e.value);
+								}
+								else
+								{
+									p->value += TC_Common::strto<double>(e.value);
+								}
+							}
+							else if(e.op == Base::SO_SUB)
+							{
+								if (p->isInt)
+								{
+									p->lvalue -= TC_Common::strto<int64_t>(e.value);
+								}
+								else
+								{
+									p->value -= TC_Common::strto<double>(e.value);
+								}
 							}
 							else
 							{
-								p->value = TC_Common::strto<double>(e.second);
+								ret = S_JSON_OPERATOR_NOT_SUPPORT;
 							}
 							break;
 						}
@@ -929,18 +975,30 @@ void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, 
 						case eJsonTypeBoolean:
 						{
 							JsonValueBooleanPtr p = JsonValueBooleanPtr::dynamicCast(it->second);
-							if (TC_Port::strcasecmp(e.second.c_str(), "true") == 0)
+							if (e.op == SO_REPLACE)
 							{
-								p->value = true;
+								if (TC_Port::strcasecmp(e.value.c_str(), "true") == 0)
+								{
+									p->value = true;
+								}
+								else if (TC_Port::strcasecmp(e.value.c_str(), "false") == 0)
+								{
+									p->value = false;
+								}
+								else
+								{
+									ret = S_JSON_DATA_NOT_SUPPORT;
+								}
 							}
-							else if (TC_Port::strcasecmp(e.second.c_str(), "false") == 0)
+							else if (e.op == Base::SO_REVERSE)
 							{
-								p->value = false;
+								p->value = !p->value;
 							}
 							else
 							{
 								ret = S_JSON_DATA_NOT_SUPPORT;
 							}
+
 							break;
 						}
 						case eJsonTypeNull:
@@ -949,6 +1007,17 @@ void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, 
 							break;
 						}
 						}
+
+						if(ret != S_OK)
+						{
+							TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << ", op:" << etos(e.op) << ", value:" << e.value << ", ret:" << etos(ret) << endl);
+						}
+					}
+					else
+					{
+						ret = S_JSON_FIELD_NOT_EXITS;
+						TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << ", op:" << etos(e.op) << ", ret:" << etos(ret) << endl);
+						break;
 					}
 				}
 

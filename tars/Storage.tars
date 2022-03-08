@@ -4,15 +4,17 @@ module Base
 
 enum STORAGE_RT
 {
-    S_OK = 0,               //成功
-    S_NO_DATA = -1,         //没有数据
-    S_ERROR = -2,           //失败
-    S_VERSION = -3,         //版本冲突
-    S_TIMESTAMP = -4,       //时间戳冲突
-    S_TABLE_NAME = -5,      //表名不合法(为空)
-    S_TABLE_EXIST = -6,     //表已经存在
-    S_TABLE_NOT_EXIST = -7, //表不存在
-    S_JSON_DATA_NOT_SUPPORT= -8, //update时, 字段格式不支持
+    S_OK                            = 0,    //成功
+    S_NO_DATA                       = -1,   //没有数据
+    S_ERROR                         = -2,   //失败
+    S_VERSION                       = -3,   //版本冲突
+    S_TIMESTAMP                     = -4,   //时间戳冲突
+    S_TABLE_NAME                    = -5,   //表名不合法(为空)
+    S_TABLE_EXIST                   = -6,   //表已经存在
+    S_TABLE_NOT_EXIST               = -7,   //表不存在
+    S_JSON_FIELD_NOT_EXITS          = -8,   //update时, 字段不存在
+    S_JSON_DATA_NOT_SUPPORT         = -9,   //update时, 字段格式不支持
+    S_JSON_OPERATOR_NOT_SUPPORT     = -10,  //update时, 操作不支持
 };
 
 struct Options
@@ -45,10 +47,26 @@ struct StorageData
     2 optional int ret = 0;             //set时无效, getBatch时用来判断数据是否获取到 (STORAGE_RT)
 };
 
+enum StorageOperator
+{
+    SO_REPLACE  = 0,                    //替换(number/string/bool有效)
+    SO_ADD      = 1,                    //增加(number有效)
+    SO_SUB      = 2,                    //减少(number有效)
+    SO_REVERSE  = 3,                    //取反(bool有效, 此时value无效)
+    SO_APPEND   = 4,                    //追加(string有效)
+};
+
+struct StorageUpdate
+{
+    0 require string field;             //字段名
+    1 require StorageOperator op;       //操作
+    2 optional string value;            //值
+};
+
 struct StorageJson
 {
     0 optional StorageKey skey;
-    1 optional map<string, string> supdate; //value是json结构体的情况下才生效
+    1 optional vector<StorageUpdate> supdate; //value是json结构体的情况下才生效
 };
 
 //分页查询, 必须指定mkey
@@ -91,7 +109,7 @@ interface Storage
     int set(StorageData data);
 
     /**
-     * 更新数据(只能是单层object的json格式时有效, 且字段是number/bool/string), 注意更新的值都用string表示
+     * 更新数据(只能是单层object的json格式时有效且字段是number/bool/string), 注意更新的值都用string表示
      * 如果字段是bool类型, 注意value是: true/false
      * @return int, S_OK: 成功, S_ERROR: 系统错误, S_JSON_DATA_NOT_SUPPORT: 字段不支持
      */   
