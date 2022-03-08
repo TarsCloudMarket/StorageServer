@@ -21,6 +21,7 @@ const string StorageStateMachine::DEL_TYPE  = "3";
 const string StorageStateMachine::BDEL_TYPE = "4";
 const string StorageStateMachine::TABLE_TYPE = "5";
 const string StorageStateMachine::SET_JSON_TYPE = "6";
+const string StorageStateMachine::BSET_JSON_TYPE = "7";
 
 //////////////////////////////////////////////////////////////////////////////////////
 class TTLCompactionFilter : public rocksdb::CompactionFilter
@@ -107,6 +108,8 @@ StorageStateMachine::StorageStateMachine(const string &dataPath)
 	_onApply[BDEL_TYPE] = std::bind(&StorageStateMachine::onDelBatch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[TABLE_TYPE] = std::bind(&StorageStateMachine::onCreateTable, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[SET_JSON_TYPE] = std::bind(&StorageStateMachine::onUpdate, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[BSET_JSON_TYPE] = std::bind(&StorageStateMachine::onUpdateBatch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+
 }
 
 StorageStateMachine::~StorageStateMachine()
@@ -846,21 +849,14 @@ void StorageStateMachine::onSet(TarsInputStream<> &is, int64_t appliedIndex, con
 
 	if(callback)
 	{
-		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response succ, ret:" << ret << endl);
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
 
 		Storage::async_response_set(callback->getCurrentPtr(), ret);
 	}
 }
 
-void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+int StorageStateMachine::onUpdateJson(rocksdb::WriteBatch &batch, const StorageJson &update)
 {
-	StorageJson update;
-
-	is.read(update, 1, false);
-
-	TLOG_DEBUG("table:" << update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey
-						<< ", appliedIndex:" << appliedIndex << ", update:" << TC_Common::tostr(update.supdate.begin(), update.supdate.end(), " ") << endl);
-
 	STORAGE_RT ret = S_OK;
 
 	auto handle = get(update.skey.table);
@@ -1044,17 +1040,13 @@ void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, 
 
 					data.writeTo(buff);
 
-					rocksdb::WriteBatch batch;
-
 					batch.Put(handle, rocksdb::Slice(key->data, key->length), rocksdb::Slice(buff.getBuffer(), buff.getLength()));
-
-					writeBatch(batch, appliedIndex);
 				}
 			}
 		}
 		else if(s.IsNotFound())
 		{
-			ret = S_OK;
+			ret = Base::S_NO_DATA;
 		}
 		else
 		{
@@ -1064,9 +1056,63 @@ void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, 
 		}
 	}
 
+	return ret;
+}
+void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	StorageJson update;
+
+	is.read(update, 1, false);
+
+	TLOG_DEBUG("table:" << update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey
+						<< ", appliedIndex:" << appliedIndex << ", update:" << TC_Common::tostr(update.supdate.begin(), update.supdate.end(), " ") << endl);
+
+	rocksdb::WriteBatch batch;
+
+	int ret = onUpdateJson(batch, update);
+
+	if(ret == S_OK)
+	{
+		writeBatch(batch, appliedIndex);
+	}
+
 	if(callback)
 	{
-		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response succ, ret:" << ret << endl);
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
+
+		Storage::async_response_update(callback->getCurrentPtr(), ret);
+	}
+}
+
+
+void StorageStateMachine::onUpdateBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	vector<StorageJson> updates;
+
+	is.read(updates, 1, false);
+
+	rocksdb::WriteBatch batch;
+
+	STORAGE_RT ret = S_OK;
+
+	for(auto &update : updates)
+	{
+		int ret = onUpdateJson(batch, update);
+
+		if(ret != S_OK)
+		{
+			break;
+		}
+	}
+
+	if(ret == S_OK)
+	{
+		writeBatch(batch, appliedIndex);
+	}
+
+	if(callback)
+	{
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
 
 		Storage::async_response_update(callback->getCurrentPtr(), ret);
 	}
@@ -1130,7 +1176,7 @@ void StorageStateMachine::onSetBatch(TarsInputStream<> &is, int64_t appliedIndex
 
 	if(callback)
 	{
-		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response succ ret:" << bret << ", size:" << rsp.size() << endl);
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ",  response ret:" << etos((STORAGE_RT)bret) << ", size:" << rsp.size() << endl);
 
 		Storage::async_response_setBatch(callback->getCurrentPtr(), bret, rsp);
 	}
@@ -1163,7 +1209,7 @@ void StorageStateMachine::onDel(TarsInputStream<> &is, int64_t appliedIndex, con
 
 	if(callback)
 	{
-		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response succ ret:" << ret << endl);
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ",  response ret:" << etos((STORAGE_RT)ret) << endl);
 
 		Storage::async_response_set(callback->getCurrentPtr(), ret);
 	}
@@ -1205,7 +1251,7 @@ void StorageStateMachine::onDelBatch(TarsInputStream<> &is, int64_t appliedIndex
 
 	if(callback)
 	{
-		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response succ, ret:" << ret << endl);
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
 
 		Storage::async_response_set(callback->getCurrentPtr(), ret);
 	}
@@ -1267,7 +1313,7 @@ void StorageStateMachine::onCreateTable(TarsInputStream<> &is, int64_t appliedIn
 		}
 		if(callback)
 		{
-			TLOG_DEBUG("table name:" << table << ", appliedIndex:" << appliedIndex << ", response succ, ret:" << ret << endl);
+			TLOG_DEBUG("table name:" << table << ", appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
 
 			Storage::async_response_createTable(callback->getCurrentPtr(), ret);
 		}

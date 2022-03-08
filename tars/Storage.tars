@@ -84,47 +84,47 @@ interface Storage
 {
     /**
      * 创建表
-     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     * @return int, S_OK: 成功, <0: 失败
      */
     int createTable(string table);
 
     /**
      * 是否有数据
      * @return opt
-     * @return int, S_OK: 成功, S_NO_DATA: 没有数据, S_ERROR: 系统错误!
+     * @return int, S_OK: 成功, S_NO_DATA: 没有数据, <0: 失败
      */
     int has(Options opt, StorageKey skey);
 
     /**
      * 读取数据
      * @return opt
-     * @return int, S_OK: 成功, S_NO_DATA: 没有数据, S_ERROR: 系统错误!
+     * @return int, S_OK: 成功, S_NO_DATA: 没有数据, <0: 失败
      */
     int get(Options opt, StorageKey skey, out StorageValue data);
 
     /**
      * 写数据(StorageData.ret无效)
-     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     * @return int, S_OK: 成功, <0: 失败
      */    
     int set(StorageData data);
 
     /**
      * 更新数据(只能是单层object的json格式时有效且字段是number/bool/string), 注意更新的值都用string表示
      * 如果字段是bool类型, 注意value是: true/false
-     * @return int, S_OK: 成功, S_ERROR: 系统错误, S_JSON_DATA_NOT_SUPPORT: 字段不支持
+     * @return int, S_OK: 成功, <0: 失败
      */   
     int update(StorageJson data);
 
     /**
      * 删除数据(注意如果ukey为空, 则删除所有mkey的数据)
-     * @return int, S_OK: 成功, S_NO_DATA: 没有数据, S_ERROR: 系统错误!
+     * @return int, S_OK: 成功, S_NO_DATA: 没有数据, <0: 失败
      */
     int del(StorageKey skey);
 
     /**
      * 读取数据, 每条记录StorageData.ret 表示数据是否成功: S_OK: 成功, S_NO_DATA: 没有数据, S_ERROR: 系统错误
      * @return opt
-     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     * @return int, S_OK: 成功, <0: 失败
      */
     int getBatch(Options opt, vector<StorageKey> skey, out vector<StorageData> data);
 
@@ -136,19 +136,26 @@ interface Storage
 
     /**
      * 批量查询是否有数据, 每条记录是否更新成功, 可以遍历ret获取到(S_OK/S_NO_DATA/S_TIMESTAMP/S_TABLE_NAME/S_TABLE_NOT_EXIST)
-     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     * @return int, S_OK: 成功, <0: 失败
      */
     int hasBatch(Options opt, vector<StorageKey> data, out map<StorageKey, int> rsp);
 
     /**
+     * 批量更新数据(只能是单层object的json格式时有效且字段是number/bool/string), 注意更新的值都用string表示
+     * 如果字段是bool类型, 注意value是: true/false
+     * @return int, S_OK: 成功, <0: 失败
+     */
+    int updateBatch(vector<StorageJson> data);
+
+    /**
      * 批量删除数据(注意如果ukey为空, 则删除所有mkey的数据)
-     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     * @return int, S_OK: 成功, <0: 失败
      */
     int delBatch(vector<StorageKey> skey);
 
     /**
      * 根据主key, 分页遍历数据, 下一次传入上次返回的ukey, 第一次ukey传入空
-     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     * @return int, S_OK: 成功, <0: 失败
      */
     int trans(Options opt, PageReq req, out vector<StorageData> data);
 

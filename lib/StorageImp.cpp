@@ -182,6 +182,28 @@ int StorageImp::setBatch(const vector<StorageData> &data, map<StorageKey, int> &
 	return 0;
 }
 
+int StorageImp::updateBatch(const vector<StorageJson> &data, CurrentPtr current)
+{
+	for(auto &k : data)
+	{
+		if(k.skey.table.empty())
+		{
+			return S_TABLE_NAME;
+		}
+	}
+	_raftNode->forwardOrReplicate(current, [&](){
+
+		TarsOutputStream<BufferWriterString> os;
+
+		os.write(StorageStateMachine::BSET_JSON_TYPE, 0);
+		os.write(data, 1);
+
+		return  os.getByteBuffer();
+	});
+
+	return 0;
+}
+
 int StorageImp::delBatch(const vector<StorageKey> &skey, CurrentPtr current)
 {
 	for(auto &k : skey)

@@ -33,6 +33,7 @@ public:
 	const static string BDEL_TYPE ;
 	const static string TABLE_TYPE;
 	const static string SET_JSON_TYPE  ;
+	const static string BSET_JSON_TYPE;
 	/**
 	 * 构造
 	 * @param dataPath
@@ -182,6 +183,7 @@ protected:
 	bool isExpire(TarsInputStream<> &is);
 	void onSet(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onUpdate(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onUpdateBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onSetBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onDel(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onDelBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
@@ -189,11 +191,12 @@ protected:
 
 	void writeBatch(rocksdb::WriteBatch &batch, int64_t appliedIndex);
 
+	int onUpdateJson(rocksdb::WriteBatch &batch, const StorageJson &update);
+
 	shared_ptr<AutoSlice> tokey(const StorageKey &key);
 	shared_ptr<AutoSlice> tokeyUpper(const string &mkey);
 	StorageKey keyto(const char *key, size_t length);
 	string tableName(const string &table) { return "t-" + table; }
-
 	string getDbDir() { return _raftDataDir + FILE_SEP + "rocksdb_data"; }
 
 	rocksdb::ColumnFamilyHandle* get(const string &table);

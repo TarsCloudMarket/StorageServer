@@ -47,7 +47,7 @@ public:
     virtual int set(const StorageData &data, CurrentPtr current);
 
 	/**
-	 * 写数据
+	 * 更新数据
 	 */
 	virtual int update(const StorageJson &data, CurrentPtr current);
 
@@ -72,11 +72,19 @@ public:
     virtual int getBatch(const Options &options, const vector<StorageKey> &skey, vector<StorageData> &data, CurrentPtr current);
 
     /**
-     * 写数据
+     * 更新某个字段
      */    
     virtual int setBatch(const vector<StorageData> &data, map<StorageKey, int> &rsp, CurrentPtr current);
 
-    /**
+	/**
+	 * 批量更新
+	 * @param data
+	 * @param current
+	 * @return
+	 */
+	virtual int updateBatch(const vector<StorageJson> &data, CurrentPtr current);
+
+	/**
      * 删除数据
      */
     virtual int delBatch(const vector<StorageKey> &skey, CurrentPtr current);
