@@ -86,6 +86,24 @@ int StorageImp::set(const StorageData &data, CurrentPtr current)
 	return 0;
 }
 
+int StorageImp::update(const StorageJson &data, CurrentPtr current)
+{
+	if(data.skey.table.empty())
+	{
+		return S_TABLE_NAME;
+	}
+	_raftNode->forwardOrReplicate(current, [&](){
+
+		TarsOutputStream<BufferWriterString> os;
+
+		os.write(StorageStateMachine::SET_JSON_TYPE, 0);
+		os.write(data, 1);
+
+		return  os.getByteBuffer();
+	});
+
+	return 0;
+}
 int StorageImp::del(const StorageKey &skey, CurrentPtr current)
 {
 	if(skey.table.empty())

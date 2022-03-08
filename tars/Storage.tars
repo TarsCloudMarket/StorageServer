@@ -12,6 +12,7 @@ enum STORAGE_RT
     S_TABLE_NAME = -5,      //表名不合法(为空)
     S_TABLE_EXIST = -6,     //表已经存在
     S_TABLE_NOT_EXIST = -7, //表不存在
+    S_JSON_DATA_NOT_SUPPORT= -8, //update时, 字段格式不支持
 };
 
 struct Options
@@ -42,6 +43,12 @@ struct StorageData
     0 optional StorageKey skey;
     1 optional StorageValue svalue;
     2 optional int ret = 0;             //set时无效, getBatch时用来判断数据是否获取到 (STORAGE_RT)
+};
+
+struct StorageJson
+{
+    0 optional StorageKey skey;
+    1 optional map<string, string> supdate; //value是json结构体的情况下才生效
 };
 
 //分页查询, 必须指定mkey
@@ -82,6 +89,12 @@ interface Storage
      * @return int, S_OK: 成功, S_ERROR: 系统错误!
      */    
     int set(StorageData data);
+
+    /**
+     * 更新数据(只能是单层object的json格式时有效, 且字段是基础类型or string)
+     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     */   
+    int update(StorageJson data);
 
     /**
      * 删除数据(注意如果ukey为空, 则删除所有mkey的数据)
