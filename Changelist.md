@@ -1,3 +1,11 @@
+## v1.1.0 20220308
+
+### cn
+- 如果数据是json格式, 支持字段级别的更新, 注意只支持number/string/bool类型
+
+### en
+- If the data is in JSON format, field level update is supported. Note that only number/string/bool types are supported
+
 ## v1.0.0 20220302
 
 ### cn

@@ -91,8 +91,9 @@ interface Storage
     int set(StorageData data);
 
     /**
-     * 更新数据(只能是单层object的json格式时有效, 且字段是基础类型or string)
-     * @return int, S_OK: 成功, S_ERROR: 系统错误!
+     * 更新数据(只能是单层object的json格式时有效, 且字段是number/bool/string), 注意更新的值都用string表示
+     * 如果字段是bool类型, 注意value是: true/false
+     * @return int, S_OK: 成功, S_ERROR: 系统错误, S_JSON_DATA_NOT_SUPPORT: 字段不支持
      */   
     int update(StorageJson data);
 

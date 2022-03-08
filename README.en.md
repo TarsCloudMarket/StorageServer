@@ -61,7 +61,9 @@ The deployment focuses on:
 - Support data version consistency
 - Support timestamp based coverage (only larger timestamps can cover data with small time errors)
 - Support timeout automatic elimination
-- When mkey is known, the data can be traversed according to ukey
+- When mkey is known, the data can be traversed according to ukey 
+- If the data format is JSON format, a field in update JSON is supported (only number/string/bool type is supported)
+
 
 ## Performance description
 
