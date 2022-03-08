@@ -806,7 +806,7 @@ void StorageStateMachine::onSet(TarsInputStream<> &is, int64_t appliedIndex, con
 	<< ", version:" << data.svalue.version << ", timestamp:" << data.svalue.timestamp << ", expireTime:" << data.svalue.expireTime
 		<< ", appliedIndex:" << appliedIndex << ", buffer size:" << data.svalue.data.size() << endl);
 
-	if(data.svalue.expireTime > 0) 
+	if(data.svalue.expireTime > 0)
 	{
 		data.svalue.expireTime += TNOW;
 	}
@@ -889,6 +889,8 @@ void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, 
 
 			if(!json)
 			{
+				TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", parse to json error." << endl);
+
 				ret = S_ERROR;
 			}
 			else
@@ -919,6 +921,8 @@ void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, 
 							}
 							else
 							{
+								TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << ", is string, op:" << etos(e.op) << " not support" << endl);
+
 								ret = S_JSON_OPERATOR_NOT_SUPPORT;
 							}
 							break;
@@ -962,6 +966,8 @@ void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, 
 							}
 							else
 							{
+								TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << ", is number, op:" << etos(e.op) << " not support" << endl);
+
 								ret = S_JSON_OPERATOR_NOT_SUPPORT;
 							}
 							break;
@@ -969,6 +975,8 @@ void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, 
 						case eJsonTypeObj:
 						case eJsonTypeArray:
 						{
+							TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << ", is object or array, op:" << etos(e.op) << " not support" << endl);
+
 							ret = S_JSON_DATA_NOT_SUPPORT;
 							break;
 						}
@@ -996,6 +1004,8 @@ void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, 
 							}
 							else
 							{
+								TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << ", is bool, op:" << etos(e.op) << " not support" << endl);
+
 								ret = S_JSON_DATA_NOT_SUPPORT;
 							}
 
@@ -1003,31 +1013,40 @@ void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, 
 						}
 						case eJsonTypeNull:
 						{
+							TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << " is null, op:" << etos(e.op) << " not support" << endl);
+
 							ret = S_JSON_DATA_NOT_SUPPORT;
 							break;
 						}
-						}
-
-						if(ret != S_OK)
-						{
-							TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << ", op:" << etos(e.op) << ", value:" << e.value << ", ret:" << etos(ret) << endl);
 						}
 					}
 					else
 					{
 						ret = S_JSON_FIELD_NOT_EXITS;
-						TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << ", op:" << etos(e.op) << ", ret:" << etos(ret) << endl);
+						TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << " in not exists, op:" << etos(e.op) << ", ret:" << etos(ret) << endl);
 						break;
 					}
 				}
 
 				if(ret == S_OK)
 				{
-					string buff = TC_Json::writeValue(json);
+					TC_Json::writeValue(json, data.data);
+
+					if(data.expireTime>0) {
+						data.expireTime += TNOW;
+					}
+
+					TarsOutputStream<> buff;
+					while(data.version == 0)
+					{
+						++data.version;
+					}
+
+					data.writeTo(buff);
 
 					rocksdb::WriteBatch batch;
 
-					batch.Put(handle, rocksdb::Slice(key->data, key->length), rocksdb::Slice(buff.c_str(), buff.length()));
+					batch.Put(handle, rocksdb::Slice(key->data, key->length), rocksdb::Slice(buff.getBuffer(), buff.getLength()));
 
 					writeBatch(batch, appliedIndex);
 				}
@@ -1059,7 +1078,7 @@ void StorageStateMachine::onSetBatch(TarsInputStream<> &is, int64_t appliedIndex
 
 	is.read(vdata, 1, false);
 
-	TLOG_ERROR("appliedIndex:" << appliedIndex << ", data size:" << vdata.size() << endl);
+	TLOG_DEBUG("appliedIndex:" << appliedIndex << ", data size:" << vdata.size() << endl);
 
 	map<StorageKey, int> rsp;
 
