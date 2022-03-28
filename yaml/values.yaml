@@ -20,6 +20,8 @@ cloud:
     - tars/Storage.tars
   assets: 
     - assets
+  open_source: false
+  independent: true
 app: Base 
 server: StorageServer
 template: tars.cpp
