@@ -110,6 +110,18 @@ StorageStateMachine::StorageStateMachine(const string &dataPath)
 	_onApply[SET_JSON_TYPE] = std::bind(&StorageStateMachine::onUpdate, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[BSET_JSON_TYPE] = std::bind(&StorageStateMachine::onUpdateBatch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 
+	_updateApply[eJsonTypeString][SO_REPLACE] = std::bind(&StorageStateMachine::updateStringReplace, this, std::placeholders::_1, std::placeholders::_2);
+	_updateApply[eJsonTypeString][SO_ADD] = std::bind(&StorageStateMachine::updateStringAdd, this, std::placeholders::_1, std::placeholders::_2);
+	_updateApply[eJsonTypeNum][SO_REPLACE] = std::bind(&StorageStateMachine::updateNumberReplace, this, std::placeholders::_1, std::placeholders::_2);
+	_updateApply[eJsonTypeNum][SO_ADD] = std::bind(&StorageStateMachine::updateNumberAdd, this, std::placeholders::_1, std::placeholders::_2);
+	_updateApply[eJsonTypeNum][SO_SUB] = std::bind(&StorageStateMachine::updateNumberSub, this, std::placeholders::_1, std::placeholders::_2);
+	_updateApply[eJsonTypeBoolean][SO_REPLACE] = std::bind(&StorageStateMachine::updateBooleanReplace, this, std::placeholders::_1, std::placeholders::_2);
+	_updateApply[eJsonTypeBoolean][SO_REVERSE] = std::bind(&StorageStateMachine::updateBooleanReverse, this, std::placeholders::_1, std::placeholders::_2);
+	_updateApply[eJsonTypeArray][SO_REPLACE] = std::bind(&StorageStateMachine::updateArrayReplace, this, std::placeholders::_1, std::placeholders::_2);
+	_updateApply[eJsonTypeArray][SO_ADD] = std::bind(&StorageStateMachine::updateArrayAdd, this, std::placeholders::_1, std::placeholders::_2);
+	_updateApply[eJsonTypeArray][SO_SUB] = std::bind(&StorageStateMachine::updateArraySub, this, std::placeholders::_1, std::placeholders::_2);
+	_updateApply[eJsonTypeArray][SO_ADD_NO_REPEAT] = std::bind(&StorageStateMachine::updateArrayAddNoRepeat, this, std::placeholders::_1, std::placeholders::_2);
+
 }
 
 StorageStateMachine::~StorageStateMachine()
@@ -878,7 +890,6 @@ int StorageStateMachine::onUpdateJson(rocksdb::WriteBatch &batch, const StorageJ
 
 			TarsInputStream<> is;
 			is.setBuffer(value.c_str(), value.length());
-
 			data.readFrom(is);
 
 			JsonValueObjPtr json = JsonValueObjPtr::dynamicCast(TC_Json::getValue(data.data));
@@ -887,133 +898,36 @@ int StorageStateMachine::onUpdateJson(rocksdb::WriteBatch &batch, const StorageJ
 			{
 				TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", parse to json error." << endl);
 
-				ret = S_ERROR;
+				ret = S_JSON_VALUE_NOT_JSON;
 			}
 			else
 			{
 				for(auto &e : update.supdate)
 				{
-					if(ret != S_OK)
-					{
-						break;
-					}
-
 					auto it = json->value.find(e.field);
 					if(it != json->value.end())
 					{
-						switch (it->second->getType())
+						auto tIt = this->_updateApply.find(it->second->getType());
+						if(tIt != this->_updateApply.end())
 						{
-						case eJsonTypeString:
-						{
-							JsonValueStringPtr p = JsonValueStringPtr::dynamicCast(it->second);
+							auto rIt = tIt->second.find(e.op);
 
-							if(e.op == SO_REPLACE)
+							if(rIt != tIt->second.end())
 							{
-								p->value = e.value;
-							}
-							else if(e.op == Base::SO_APPEND)
-							{
-								p->value += e.value;
-							}
-							else
-							{
-								TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << ", is string, op:" << etos(e.op) << " not support" << endl);
+								ret = rIt->second(it->second, e);
 
-								ret = S_JSON_OPERATOR_NOT_SUPPORT;
-							}
-							break;
-						}
-						case eJsonTypeNum:
-						{
-							JsonValueNumPtr p = JsonValueNumPtr::dynamicCast(it->second);
-
-							if(e.op == SO_REPLACE)
-							{
-								if (p->isInt)
+								if(ret != S_OK)
 								{
-									p->lvalue = TC_Common::strto<int64_t>(e.value);
-								}
-								else
-								{
-									p->value = TC_Common::strto<double>(e.value);
-								}
-							}
-							else if(e.op == Base::SO_ADD)
-							{
-								if (p->isInt)
-								{
-									p->lvalue += TC_Common::strto<int64_t>(e.value);
-								}
-								else
-								{
-									p->value += TC_Common::strto<double>(e.value);
-								}
-							}
-							else if(e.op == Base::SO_SUB)
-							{
-								if (p->isInt)
-								{
-									p->lvalue -= TC_Common::strto<int64_t>(e.value);
-								}
-								else
-								{
-									p->value -= TC_Common::strto<double>(e.value);
+									TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << " , op:" << etos(e.op) << ", ret:" << etos(ret) << endl);
+									break;
 								}
 							}
 							else
 							{
-								TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << ", is number, op:" << etos(e.op) << " not support" << endl);
+								TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << " , op:" << etos(e.op) << ", ret:" << etos(ret) << endl);
 
-								ret = S_JSON_OPERATOR_NOT_SUPPORT;
+								ret = Base::S_JSON_OPERATOR_NOT_SUPPORT;
 							}
-							break;
-						}
-						case eJsonTypeObj:
-						case eJsonTypeArray:
-						{
-							TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << ", is object or array, op:" << etos(e.op) << " not support" << endl);
-
-							ret = S_JSON_DATA_NOT_SUPPORT;
-							break;
-						}
-						case eJsonTypeBoolean:
-						{
-							JsonValueBooleanPtr p = JsonValueBooleanPtr::dynamicCast(it->second);
-							if (e.op == SO_REPLACE)
-							{
-								if (TC_Port::strcasecmp(e.value.c_str(), "true") == 0)
-								{
-									p->value = true;
-								}
-								else if (TC_Port::strcasecmp(e.value.c_str(), "false") == 0)
-								{
-									p->value = false;
-								}
-								else
-								{
-									ret = S_JSON_DATA_NOT_SUPPORT;
-								}
-							}
-							else if (e.op == Base::SO_REVERSE)
-							{
-								p->value = !p->value;
-							}
-							else
-							{
-								TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << ", is bool, op:" << etos(e.op) << " not support" << endl);
-
-								ret = S_JSON_DATA_NOT_SUPPORT;
-							}
-
-							break;
-						}
-						case eJsonTypeNull:
-						{
-							TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << " is null, op:" << etos(e.op) << " not support" << endl);
-
-							ret = S_JSON_DATA_NOT_SUPPORT;
-							break;
-						}
 						}
 					}
 					else
@@ -1028,7 +942,10 @@ int StorageStateMachine::onUpdateJson(rocksdb::WriteBatch &batch, const StorageJ
 				{
 					TC_Json::writeValue(json, data.data);
 
-					if(data.expireTime>0) {
+//					LOG_CONSOLE_DEBUG << string(data.data.data(), data.data.size()) << endl;
+
+					if(data.expireTime>0)
+					{
 						data.expireTime += TNOW;
 					}
 
@@ -1318,4 +1235,354 @@ void StorageStateMachine::onCreateTable(TarsInputStream<> &is, int64_t appliedIn
 			Storage::async_response_createTable(callback->getCurrentPtr(), ret);
 		}
 	}
+}
+
+STORAGE_RT StorageStateMachine::updateStringReplace(JsonValuePtr &value, const Base::StorageUpdate &update)
+{
+	JsonValueStringPtr p = JsonValueStringPtr::dynamicCast(value);
+	if(!p)
+	{
+		return S_JSON_FIELD_TYPE_ERROR;
+	}
+
+	p->value = update.value;
+
+	return S_OK;
+}
+
+STORAGE_RT StorageStateMachine::updateStringAdd(JsonValuePtr &value, const Base::StorageUpdate &update)
+{
+	JsonValueStringPtr p = JsonValueStringPtr::dynamicCast(value);
+	if(!p)
+	{
+		return S_JSON_FIELD_TYPE_ERROR;
+	}
+
+	p->value += update.value;
+
+	return S_OK;
+}
+
+STORAGE_RT StorageStateMachine::updateNumberReplace(JsonValuePtr &value, const Base::StorageUpdate &update)
+{
+	JsonValueNumPtr p = JsonValueNumPtr::dynamicCast(value);
+	if(!p)
+	{
+		return S_JSON_FIELD_TYPE_ERROR;
+	}
+
+	if (update.type == Base::FT_INTEGER)
+	{
+		p->isInt = true;
+		p->lvalue = TC_Common::strto<int64_t>(update.value);
+	}
+	else
+	{
+		p->isInt = false;
+		p->value = TC_Common::strto<double>(update.value);
+	}
+
+	return S_OK;
+}
+
+STORAGE_RT StorageStateMachine::updateNumberAdd(JsonValuePtr &value, const Base::StorageUpdate &update)
+{
+	JsonValueNumPtr p = JsonValueNumPtr::dynamicCast(value);
+	if(!p)
+	{
+		return S_JSON_FIELD_TYPE_ERROR;
+	}
+
+	if (update.type == Base::FT_INTEGER)
+	{
+		if(p->isInt)
+		{
+			p->lvalue += TC_Common::strto<int64_t>(update.value);
+		}
+		else
+		{
+			p->value += TC_Common::strto<double>(update.value);
+		}
+	}
+	else
+	{
+		p->value += TC_Common::strto<double>(update.value);
+		p->isInt = false;
+	}
+
+	return S_OK;
+}
+
+STORAGE_RT StorageStateMachine::updateNumberSub(JsonValuePtr &value, const Base::StorageUpdate &update)
+{
+	JsonValueNumPtr p = JsonValueNumPtr::dynamicCast(value);
+	if(!p)
+	{
+		return S_JSON_FIELD_TYPE_ERROR;
+	}
+
+	if (update.type == Base::FT_INTEGER)
+	{
+		if(p->isInt)
+		{
+			p->lvalue -= TC_Common::strto<int64_t>(update.value);
+		}
+		else
+		{
+			p->value -= TC_Common::strto<double>(update.value);
+		}
+	}
+	else
+	{
+		p->value -= TC_Common::strto<double>(update.value);
+		p->isInt = false;
+	}
+
+	return S_OK;
+}
+
+STORAGE_RT StorageStateMachine::updateBooleanReplace(JsonValuePtr &value, const Base::StorageUpdate &update)
+{
+	JsonValueBooleanPtr p = JsonValueBooleanPtr::dynamicCast(value);
+	if(!p)
+	{
+		return S_JSON_FIELD_TYPE_ERROR;
+	}
+
+	if (TC_Port::strcasecmp(update.value.c_str(), "true") == 0)
+	{
+		p->value = true;
+	}
+	else
+	{
+		p->value = false;
+	}
+
+	return S_OK;
+}
+
+STORAGE_RT StorageStateMachine::updateBooleanReverse(JsonValuePtr &value, const Base::StorageUpdate &update)
+{
+	JsonValueBooleanPtr p = JsonValueBooleanPtr::dynamicCast(value);
+	if(!p)
+	{
+		return S_JSON_FIELD_TYPE_ERROR;
+	}
+
+	p->value = !p->value;
+
+	return S_OK;
+
+}
+
+STORAGE_RT StorageStateMachine::updateArrayReplace(JsonValuePtr &value, const Base::StorageUpdate &update)
+{
+	JsonValueArrayPtr p = JsonValueArrayPtr::dynamicCast(value);
+	if(!p)
+	{
+		return S_JSON_FIELD_TYPE_ERROR;
+	}
+
+	JsonValueArrayPtr arrayPtr = JsonValueArrayPtr::dynamicCast(TC_Json::getValue(update.value));
+
+	p->value = arrayPtr->value;
+
+	return S_OK;
+}
+
+STORAGE_RT StorageStateMachine::updateArrayAdd(JsonValuePtr &value, const Base::StorageUpdate &update)
+{
+	JsonValueArrayPtr p = JsonValueArrayPtr::dynamicCast(value);
+	if(!p)
+	{
+		return S_JSON_FIELD_TYPE_ERROR;
+	}
+
+	switch(update.type)
+	{
+	case Base::FT_INTEGER:
+		p->value.push_back(new JsonValueNum(TC_Common::strto<int64_t>(update.value), true));
+		break;
+	case Base::FT_DOUBLE:
+		p->value.push_back(new JsonValueNum(TC_Common::strto<double>(update.value), false));
+		break;
+	case Base::FT_STRING:
+		p->value.push_back(new JsonValueString(update.value));
+		break;
+	case Base::FT_BOOLEAN:
+		p->value.push_back(new JsonValueBoolean(TC_Port::strncasecmp(update.value.c_str(),"true", update.value.size()) == 0));
+		break;
+	case Base::FT_ARRAY:
+	{
+		JsonValueArrayPtr arrayPtr = JsonValueArrayPtr::dynamicCast(
+				TC_Json::getValue(update.value));
+
+		p->value.insert(p->value.end(), arrayPtr->value.begin(), arrayPtr->value.end());
+		break;
+	}
+	default:
+		return S_JSON_VALUE_TYPE_ERROR;
+	}
+
+	return  S_OK;
+}
+
+STORAGE_RT StorageStateMachine::updateArraySub(JsonValuePtr &value, const Base::StorageUpdate &update)
+{
+	JsonValueArrayPtr p = JsonValueArrayPtr::dynamicCast(value);
+	if(!p)
+	{
+		return S_JSON_FIELD_TYPE_ERROR;
+	}
+
+	switch(update.type)
+	{
+	case Base::FT_INTEGER:
+	case Base::FT_DOUBLE:
+		while(true)
+		{
+			auto it = p->find(eJsonTypeNum, update.value);
+
+			if (it != p->value.end())
+			{
+				p->value.erase(it);
+			}
+			else
+			{
+				break;
+			}
+		}
+		break;
+	case Base::FT_STRING:
+		while(true)
+		{
+			auto it = p->find(eJsonTypeString, update.value);
+
+			if (it != p->value.end())
+			{
+				p->value.erase(it);
+			}
+			else
+			{
+				break;
+			}
+		}
+		break;
+	case Base::FT_BOOLEAN:
+	{
+		while (true)
+		{
+			auto it = p->find(eJsonTypeBoolean, update.value);
+
+			if (it != p->value.end())
+			{
+				p->value.erase(it);
+			}
+			else
+			{
+				break;
+			}
+		}
+		break;
+	}
+	case Base::FT_ARRAY:
+	{
+		JsonValueArrayPtr arrayPtr = JsonValueArrayPtr::dynamicCast(TC_Json::getValue(update.value));
+		if(!arrayPtr)
+		{
+			return S_JSON_VALUE_TYPE_ERROR;
+		}
+
+		while (true)
+		{
+			for(auto item : arrayPtr->value)
+			{
+				auto it = p->find(item);
+				if(it != p->value.end())
+				{
+					p->value.erase(it);
+				}
+			}
+		}
+		break;
+	}
+	default:
+		return S_JSON_VALUE_TYPE_ERROR;
+	}
+
+	return S_OK;
+}
+
+STORAGE_RT StorageStateMachine::updateArrayAddNoRepeat(JsonValuePtr &value, const Base::StorageUpdate &update)
+{
+	JsonValueArrayPtr p = JsonValueArrayPtr::dynamicCast(value);
+	if(!p)
+	{
+		return S_JSON_FIELD_TYPE_ERROR;
+	}
+
+	switch(update.type)
+	{
+	case Base::FT_INTEGER:
+	{
+		auto it = p->find(eJsonTypeNum, update.value);
+		if (it == p->value.end())
+		{
+			p->value.push_back(new JsonValueNum(TC_Common::strto<int64_t>(update.value), true));
+		}
+		break;
+	}
+	case Base::FT_DOUBLE:
+	{
+		auto it = p->find(eJsonTypeNum, update.value);
+		if (it == p->value.end())
+		{
+			p->value.push_back(new JsonValueNum(TC_Common::strto<double>(update.value), false));
+		}
+		break;
+	}
+	case Base::FT_STRING:
+	{
+		auto it = p->find(eJsonTypeString, update.value);
+		if (it == p->value.end())
+		{
+			p->value.push_back(new JsonValueString(update.value));
+		}
+		break;
+	}
+	case Base::FT_BOOLEAN:
+	{
+		auto it = p->find(eJsonTypeBoolean, update.value);
+		if (it == p->value.end())
+		{
+			p->value.push_back(new JsonValueBoolean(TC_Port::strncasecmp(update.value.c_str(),"true", update.value.length()) == 0));
+		}
+		break;
+	}
+	case Base::FT_ARRAY:
+	{
+		JsonValueArrayPtr arrayPtr = JsonValueArrayPtr::dynamicCast(TC_Json::getValue(update.value));
+		if(!arrayPtr)
+		{
+			return S_JSON_VALUE_TYPE_ERROR;
+		}
+
+		for(auto array : arrayPtr->value)
+		{
+			auto it = p->find(array);
+			if(it == p->value.end())
+			{
+				p->value.push_back(array);
+			}
+		}
+
+		break;
+	}
+	default:
+	{
+		return S_JSON_VALUE_TYPE_ERROR;
+	}
+	}
+
+	return S_OK;
 }

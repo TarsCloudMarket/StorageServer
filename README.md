@@ -59,7 +59,7 @@
 - 支持基于时间戳的覆盖(只能更大的时间戳覆盖小时间错的数据)
 - 支持超时自动淘汰
 - 在已知mkey的情况下, 可以根据ukey来遍历数据
-- 如果数据格式json格式下, 支持update json中某个字段(只支持number/string/bool类型)
+- 如果数据格式json格式下, 支持update json中某个字段(只支持number/string/bool/array类型)
 
 ## 性能说明
 

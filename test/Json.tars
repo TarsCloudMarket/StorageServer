@@ -1,0 +1,15 @@
+
+module Base
+{
+    struct TestJson
+    {
+        0 optional string str;
+        1 optional bool   boon;
+        2 optional int    inte;
+        3 optional double doub;
+        4 optional vector<string> strs;
+        5 optional vector<int> intes;
+        6 optional vector<double> doubs;
+    };
+
+}; 

@@ -13,8 +13,10 @@ enum STORAGE_RT
     S_TABLE_EXIST                   = -6,   //表已经存在
     S_TABLE_NOT_EXIST               = -7,   //表不存在
     S_JSON_FIELD_NOT_EXITS          = -8,   //update时, 字段不存在
-    S_JSON_DATA_NOT_SUPPORT         = -9,   //update时, 字段格式不支持
-    S_JSON_OPERATOR_NOT_SUPPORT     = -10,  //update时, 操作不支持
+    S_JSON_OPERATOR_NOT_SUPPORT     = -9,   //update时, 操作不支持
+    S_JSON_FIELD_TYPE_ERROR         = -10,  //update时, 字段类型错误
+    S_JSON_VALUE_TYPE_ERROR         = -11,  //update时, 值类型错误
+    S_JSON_VALUE_NOT_JSON           = -12,  //update时, value不是json对象
 };
 
 struct Options
@@ -47,20 +49,40 @@ struct StorageData
     2 optional int ret = 0;             //set时无效, getBatch时用来判断数据是否获取到 (STORAGE_RT)
 };
 
+//基本处理规则如下:
+
+// SO_ADD 会添加元素
+// SO_SUB 会减少元素
+// SO_ADD_NO_REPEAT会添加不重复的元素
+// SO_REPLACE, 会替换元素
+// 如果字段是数组, 则添加减少的操作既可以是一个元素, 也可以是一批元素, 此时value是json格式的字符串
 enum StorageOperator
 {
-    SO_REPLACE  = 0,                    //替换(number/string/bool有效)
-    SO_ADD      = 1,                    //增加(number有效)
-    SO_SUB      = 2,                    //减少(number有效)
-    SO_REVERSE  = 3,                    //取反(bool有效, 此时value无效)
-    SO_APPEND   = 4,                    //追加(string有效)
+    SO_REPLACE  = 0,                    //替换value(FT_INTEGER/FT_DOUBLE/FT_BOOLEAN/FT_STRING/FT_ARRAY 有效)
+    SO_ADD      = 1,                    //增加value(FT_INTEGER/FT_DOUBLE/FT_STRING/FT_ARRAY 有效):
+    SO_SUB      = 2,                    //减少value(FT_INTEGER/FT_DOUBLE/FT_ARRAY有效)
+    SO_REVERSE  = 3,                    //取反(FT_BOOLEAN有效, 此时value无效)
+    SO_ADD_NO_REPEAT   = 4,             //追加元素(FT_ARRAY有效), 重复时不追加
 };
 
+enum FieldType
+{
+    FT_INTEGER  = 1,
+    FT_DOUBLE   = 2,
+    FT_BOOLEAN  = 3,
+    FT_STRING   = 4,
+    FT_ARRAY    = 5
+};
+
+// 字段是number(FT_INTEGER/FT_DOUBLE), value会转换成数字
+// 字段是bool(FT_BOOLEAN), value设置为"true" or "false"
+// 字段是array(FT_ARRAY), value是json格式的字符串: "[]", 类型为FT_ARRAY
 struct StorageUpdate
 {
     0 require string field;             //字段名
     1 require StorageOperator op;       //操作
     2 optional string value;            //值
+    3 optional FieldType    type;       //值的类型
 };
 
 struct StorageJson
@@ -109,7 +131,7 @@ interface Storage
     int set(StorageData data);
 
     /**
-     * 更新数据(只能是单层object的json格式时有效且字段是number/bool/string), 注意更新的值都用string表示
+     * 更新数据, 注意字段必须存在, 不存在则更新失败!
      * 如果字段是bool类型, 注意value是: true/false
      * @return int, S_OK: 成功, <0: 失败
      */   
@@ -141,7 +163,7 @@ interface Storage
     int hasBatch(Options opt, vector<StorageKey> data, out map<StorageKey, int> rsp);
 
     /**
-     * 批量更新数据(只能是单层object的json格式时有效且字段是number/bool/string), 注意更新的值都用string表示
+     * 批量更新数据, 注意字段必须存在, 不存在则更新失败!
      * 如果字段是bool类型, 注意value是: true/false
      * @return int, S_OK: 成功, <0: 失败
      */

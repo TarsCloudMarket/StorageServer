@@ -156,6 +156,7 @@ public:
 
 protected:
 	using onapply_type = std::function<void(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)>;
+	using field_update_type = std::function<STORAGE_RT(JsonValuePtr &value, const Base::StorageUpdate &update)>;
 
 	//为了保持住key, 不用直接用string 否则mac下, rocksdb::Slice莫名其妙内存被释放了, linux上没问题
 	struct AutoSlice
@@ -201,6 +202,18 @@ protected:
 
 	rocksdb::ColumnFamilyHandle* get(const string &table);
 
+	STORAGE_RT updateStringReplace(JsonValuePtr &value, const Base::StorageUpdate &update);
+	STORAGE_RT updateStringAdd(JsonValuePtr &value, const Base::StorageUpdate &update);
+	STORAGE_RT updateNumberReplace(JsonValuePtr &value, const Base::StorageUpdate &update);
+	STORAGE_RT updateNumberAdd(JsonValuePtr &value, const Base::StorageUpdate &update);
+	STORAGE_RT updateNumberSub(JsonValuePtr &value, const Base::StorageUpdate &update);
+	STORAGE_RT updateBooleanReplace(JsonValuePtr &value, const Base::StorageUpdate &update);
+	STORAGE_RT updateBooleanReverse(JsonValuePtr &value, const Base::StorageUpdate &update);
+	STORAGE_RT updateArrayReplace(JsonValuePtr &value, const Base::StorageUpdate &update);
+	STORAGE_RT updateArrayAdd(JsonValuePtr &value, const Base::StorageUpdate &update);
+	STORAGE_RT updateArraySub(JsonValuePtr &value, const Base::StorageUpdate &update);
+	STORAGE_RT updateArrayAddNoRepeat(JsonValuePtr &value, const Base::StorageUpdate &update);
+
 protected:
 	string          _raftDataDir;
 	rocksdb::DB     *_db = NULL;
@@ -209,6 +222,9 @@ protected:
 	unordered_map<string, rocksdb::ColumnFamilyHandle*> _column_familys;
 
 	unordered_map<string, onapply_type>	_onApply;
+
+	//字段更新机制
+	map<tars::eJsonType, map<StorageOperator, field_update_type>>	_updateApply;
 };
 
 

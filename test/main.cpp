@@ -5,6 +5,7 @@
 #include "rafttest/RaftTest.h"
 #include "StorageServer.h"
 #include "Storage.h"
+#include "Json.h"
 
 using namespace std;
 using namespace Base;
@@ -98,9 +99,7 @@ TEST_F(StorageUnitTest, TestStorageCreateTable)
 	ASSERT_TRUE(ret == S_TABLE_EXIST);
 
 	raftTest->stopAll();
-
 }
-
 
 TEST_F(StorageUnitTest, TestStorageSetNoTable)
 {
@@ -123,7 +122,6 @@ TEST_F(StorageUnitTest, TestStorageSetNoTable)
 	ret = prx->set(data);
 	ASSERT_TRUE(ret == S_TABLE_NOT_EXIST);
 
-	LOG_CONSOLE_DEBUG << endl;
 	//测试批量写
 	vector<StorageData> vdata;
 	for(size_t i = 0; i < 10; i++)
@@ -1141,6 +1139,560 @@ TEST_F(StorageUnitTest, TestStorageExpireTimeBatch)
 	for(auto &v : value)
 	{
 		ASSERT_TRUE(v.ret == S_NO_DATA);
+	}
+
+	raftTest->stopAll();
+}
+
+
+TEST_F(StorageUnitTest, TestStorageJson)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+	prx->createTable("test_json");
+
+	StorageKey skey;
+	skey.table = "test_json";
+	skey.mkey = "test";
+
+	StorageData data;
+	data.skey = skey;
+//	data.svalue.expireTime = 10000;
+
+	Options options;
+	options.leader = true;
+
+	int ret;
+
+	TestJson  tj;
+	tj.str = "abc";
+	tj.boon = true;
+	tj.inte = 10;
+	tj.doub = 11.f;
+	tj.strs.push_back("def");
+	tj.intes.push_back(10);
+	tj.doubs.push_back(11.f);
+
+	string buff = tj.writeToJsonString();
+	data.svalue.data.insert(data.svalue.data.end(), buff.begin(), buff.end());
+
+	ret = prx->set(data);
+	ASSERT_TRUE(ret == 0);
+
+	{
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		ASSERT_TRUE(rtj.str == tj.str);
+	}
+
+	if(0)
+	{
+
+		StorageJson json;
+		json.skey = skey;
+
+		StorageUpdate update;
+		update.type = Base::FT_STRING;
+		update.value = "def";
+		update.field = "str";
+		update.op = SO_REPLACE;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		ASSERT_TRUE(rtj.str == "def");
+	}
+
+	{
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_STRING;
+		update.value = "def";
+		update.field = "str";
+		update.op = Base::SO_ADD;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << rtj.str << endl;
+
+		ASSERT_TRUE(rtj.str == "abcdef");
+	}
+
+	{
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_STRING;
+		update.value = "def";
+		update.field = "str";
+		update.op = Base::SO_ADD;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << rtj.str << endl;
+
+		ASSERT_TRUE(rtj.str == "abcdef");
+	}
+
+	{
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_INTEGER;
+		update.value = "8";
+		update.field = "inte";
+		update.op = Base::SO_REPLACE;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << rtj.inte << endl;
+
+		ASSERT_TRUE(rtj.inte == 8);
+	}
+
+	{
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_INTEGER;
+		update.value = "5";
+		update.field = "inte";
+		update.op = Base::SO_ADD;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << rtj.inte << endl;
+
+		ASSERT_TRUE(rtj.inte == 15);
+	}
+
+	{
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_INTEGER;
+		update.value = "5";
+		update.field = "inte";
+		update.op = Base::SO_SUB;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << rtj.inte << endl;
+
+		ASSERT_TRUE(rtj.inte == 5);
+	}
+
+	{
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_BOOLEAN;
+		update.value = "true";
+		update.field = "boon";
+		update.op = Base::SO_REPLACE;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << rtj.inte << endl;
+
+		ASSERT_TRUE(rtj.boon);
+	}
+
+	{
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_BOOLEAN;
+		update.value = "true";
+		update.field = "boon";
+		update.op = Base::SO_REVERSE;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << rtj.inte << endl;
+
+		ASSERT_FALSE(rtj.boon);
+	}
+
+	{
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_INTEGER;
+		update.value = "8";
+		update.field = "doub";
+		update.op = Base::SO_REPLACE;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << rtj.doub << endl;
+
+		ASSERT_TRUE(TC_Common::equal(rtj.doub, 8));
+	}
+
+	{
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_INTEGER;
+		update.value = "5";
+		update.field = "doub";
+		update.op = Base::SO_ADD;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << rtj.doub << endl;
+
+		ASSERT_TRUE(TC_Common::equal(rtj.doub, 16));
+	}
+
+	{
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_DOUBLE;
+		update.value = "5.5";
+		update.field = "doub";
+		update.op = Base::SO_SUB;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << rtj.doub << endl;
+
+		ASSERT_TRUE(TC_Common::equal(rtj.doub, 5.5));
+	}
+
+	{
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_STRING;
+		update.value = "55";
+		update.field = "strs";
+		update.op = Base::SO_ADD;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << TC_Common::tostr(rtj.strs.begin(), rtj.strs.end(), ", ") << endl;
+
+		ASSERT_TRUE(rtj.strs.size() == 2);
+		ASSERT_TRUE(rtj.strs[1] == "55");
+	}
+
+	{
+//		ret = prx->set(data);
+//		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_STRING;
+		update.value = "55";
+		update.field = "strs";
+		update.op = Base::SO_SUB;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << TC_Common::tostr(rtj.strs.begin(), rtj.strs.end(), ", ") << endl;
+
+		ASSERT_TRUE(rtj.strs.size() == 1);
+		ASSERT_TRUE(rtj.strs[0] == "def");
+	}
+
+	{
+//		ret = prx->set(data);
+//		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_STRING;
+		update.value = "def";
+		update.field = "strs";
+		update.op = Base::SO_ADD_NO_REPEAT;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << TC_Common::tostr(rtj.strs.begin(), rtj.strs.end(), ", ") << endl;
+
+		ASSERT_TRUE(rtj.strs.size() == 1);
+		ASSERT_TRUE(rtj.strs[0] == "def");
+	}
+
+	{
+//		ret = prx->set(data);
+//		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_ARRAY;
+		update.value = "[\"3333\", \"111\"]";
+		update.field = "strs";
+		update.op = Base::SO_REPLACE;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << TC_Common::tostr(rtj.strs.begin(), rtj.strs.end(), ", ") << endl;
+
+		ASSERT_TRUE(rtj.strs.size() == 2);
+		ASSERT_TRUE(rtj.strs[1] == "111");
+	}
+
+	{
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_ARRAY;
+		update.value = "[\"3333\", \"111\"]";
+		update.field = "strs";
+		update.op = Base::SO_ADD;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << TC_Common::tostr(rtj.strs.begin(), rtj.strs.end(), ", ") << endl;
+
+		ASSERT_TRUE(rtj.strs.size() == 3);
+		ASSERT_TRUE(rtj.strs[2] == "111");
+	}
+
+
+	{
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		StorageUpdate update;
+		update.type = Base::FT_ARRAY;
+		update.value = "[\"def\", \"111\"]";
+		update.field = "strs";
+		update.op = Base::SO_ADD_NO_REPEAT;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+		ASSERT_TRUE(ret == 0);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		TestJson rtj;
+		rtj.readFromJsonString(string(value.data.data(), value.data.size()));
+
+		LOG_CONSOLE_DEBUG << TC_Common::tostr(rtj.strs.begin(), rtj.strs.end(), ", ") << endl;
+
+		ASSERT_TRUE(rtj.strs.size() == 2);
+		ASSERT_TRUE(rtj.strs[1] == "111");
 	}
 
 	raftTest->stopAll();

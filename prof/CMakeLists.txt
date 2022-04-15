@@ -1,7 +1,7 @@
 
-gen_server(raft TestStorage)
+gen_server(raft prof-test)
 
-add_dependencies(TestStorage StorageServer)
+add_dependencies(prof-test StorageServer)
 
 #target_link_libraries(TestStorage raft)
 
