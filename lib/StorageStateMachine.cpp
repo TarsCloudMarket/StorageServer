@@ -930,6 +930,40 @@ int StorageStateMachine::onUpdateJson(rocksdb::WriteBatch &batch, const StorageJ
 							}
 						}
 					}
+					else if(e.op == SO_REPLACE || e.op == SO_ADD_NO_REPEAT || e.op == SO_ADD)
+					{
+						ret = S_OK;
+
+						JsonValuePtr value;
+
+						switch(e.type)
+						{
+						case Base::FT_INTEGER:
+							value = new JsonValueNum(TC_Common::strto<int64_t>(e.value), true);
+							break;
+						case Base::FT_DOUBLE:
+							value = new JsonValueNum(TC_Common::strto<double>(e.value), false);
+							break;
+						case Base::FT_STRING:
+							value = new JsonValueString(e.value);
+							break;
+						case Base::FT_BOOLEAN:
+							value = new JsonValueBoolean(TC_Port::strncasecmp(e.value.c_str(),"true", e.value.size()) == 0);
+							break;
+						case Base::FT_ARRAY:
+						{
+							value = JsonValueArrayPtr::dynamicCast(TC_Json::getValue(e.value));
+							break;
+						}
+						default:
+							ret = S_JSON_VALUE_TYPE_ERROR;
+						}
+
+						if(value)
+						{
+							json->value[e.field] = value;
+						}
+					}
 					else
 					{
 						ret = S_JSON_FIELD_NOT_EXITS;

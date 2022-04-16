@@ -50,19 +50,19 @@ struct StorageData
 };
 
 //基本处理规则如下:
-
-// SO_ADD 会添加元素
-// SO_SUB 会减少元素
-// SO_ADD_NO_REPEAT会添加不重复的元素
-// SO_REPLACE, 会替换元素
+// SO_ADD 会添加value数据, FT_INTEGER/FT_DOUBLE/FT_BOOLEAN/FT_STRING/FT_ARRAY 有效, 字段不存在则新增且值为value
+// SO_SUB 会减少value数据, FT_INTEGER/FT_DOUBLE/FT_ARRAY 有效, 字段不存在则报错
+// SO_ADD_NO_REPEAT, 会添加不重复的元素, FT_ARRAY, 字段不存在, 则新增字段且值为value
+// SO_REPLACE, 会替换数据, 字段不存在, 则新增字段且值为value
+// SO_REVERSE, 取反, FT_BOOLEAN 有效, 字段不存在则报错
 // 如果字段是数组, 则添加减少的操作既可以是一个元素, 也可以是一批元素, 此时value是json格式的字符串
 enum StorageOperator
 {
-    SO_REPLACE  = 0,                    //替换value(FT_INTEGER/FT_DOUBLE/FT_BOOLEAN/FT_STRING/FT_ARRAY 有效)
-    SO_ADD      = 1,                    //增加value(FT_INTEGER/FT_DOUBLE/FT_STRING/FT_ARRAY 有效):
-    SO_SUB      = 2,                    //减少value(FT_INTEGER/FT_DOUBLE/FT_ARRAY有效)
-    SO_REVERSE  = 3,                    //取反(FT_BOOLEAN有效, 此时value无效)
-    SO_ADD_NO_REPEAT   = 4,             //追加元素(FT_ARRAY有效), 重复时不追加
+    SO_REPLACE  = 0,
+    SO_ADD      = 1,
+    SO_SUB      = 2,
+    SO_REVERSE  = 3,
+    SO_ADD_NO_REPEAT   = 4,
 };
 
 enum FieldType
