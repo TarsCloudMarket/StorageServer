@@ -34,6 +34,11 @@ public:
 	 **/
 	virtual void destroyApp();
 
+protected:
+	//storage.get table mkey ukey value
+	bool cmdGet(const string&command, const string&params, string& result);
+
+	bool cmdSet(const string&command, const string&params, string& result);
 };
 
 

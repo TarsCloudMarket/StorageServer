@@ -63,6 +63,9 @@ void StorageServer::initialize()
 	TLOG_DEBUG("dataDir:" << raftOptions.dataDir << endl);
 
 	onInitializeRaft(raftOptions, "StorageObj", TC_File::simplifyDirectory(dataPath + FILE_SEP + "StorageLog-" + TC_Common::tostr(_index)));
+
+	TARS_ADD_ADMIN_CMD_NORMAL("storage.get", StorageServer::cmdGet);
+	TARS_ADD_ADMIN_CMD_NORMAL("storage.set", StorageServer::cmdSet);
 }
 
 void StorageServer::destroyApp()
@@ -70,4 +73,75 @@ void StorageServer::destroyApp()
 	_stateMachine->close();
 
 	onDestroyRaft();
+}
+
+
+//storage.get table mkey ukey
+bool StorageServer::cmdGet(const string&command, const string&params, string& result)
+{
+	vector<string> v = TC_Common::sepstr<string>(params, " ");
+
+	if(v.size() >= 3)
+	{
+		StorageKey skey;
+		skey.table = v[0];
+		skey.mkey = v[1];
+		skey.ukey = v[2];
+
+		StorageValue data;
+		int ret = _stateMachine->get(skey, data);
+
+		if(ret == S_OK)
+		{
+			result = "version: " + TC_Common::tostr(data.version) + "\n";
+			result += "timestamp: " + TC_Common::tostr(data.timestamp) + "\n";
+			result += "expireTime: " + TC_Common::tostr(data.expireTime) + "\n";
+			result += "data: " + string(data.data.data(), data.data.size()) + "\n";
+		}
+		else if(ret == S_NO_DATA)
+		{
+			result = "no data";
+		}
+		else
+		{
+			result = "error, ret:" + etos((STORAGE_RT)ret);
+		}
+	}
+	else
+	{
+		result = "Invalid parameters.Should be: storage.get table mkey ukey";
+	}
+	return true;
+
+}
+
+bool StorageServer::cmdSet(const string&command, const string&params, string& result)
+{
+	vector<string> v = TC_Common::sepstr<string>(params, " ");
+
+	if(v.size() >= 4)
+	{
+		StorageData data;
+		data.skey.table = v[0];
+		data.skey.mkey = v[1];
+		data.skey.ukey = v[2];
+		data.svalue.data.assign(v[3].data(), v[3].data()+v[3].size());
+
+		StoragePrx prx = _raftNode->getBussLeaderPrx<StoragePrx>();
+		int ret = prx->set(data);
+
+		if(ret == S_OK)
+		{
+			result = "set succ";
+		}
+		else
+		{
+			result = "set error, ret:" + etos((STORAGE_RT)ret);
+		}
+	}
+	else
+	{
+		result = "Invalid parameters.Should be: storage.set table mkey ukey value";
+	}
+	return true;
 }
