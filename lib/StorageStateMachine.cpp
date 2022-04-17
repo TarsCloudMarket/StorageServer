@@ -884,120 +884,140 @@ int StorageStateMachine::onUpdateJson(rocksdb::WriteBatch &batch, const StorageJ
 		std::string value;
 		auto key = tokey(update.skey);
 		rocksdb::Status s = _db->Get(rocksdb::ReadOptions(), handle, rocksdb::Slice(key->data, key->length), &value);
-		if (s.ok())
+		if (s.ok() || s.IsNotFound())
 		{
+			ret = S_OK;
+
 			StorageValue data;
 
-			TarsInputStream<> is;
-			is.setBuffer(value.c_str(), value.length());
-			data.readFrom(is);
+			JsonValueObjPtr json;
 
-			JsonValueObjPtr json = JsonValueObjPtr::dynamicCast(TC_Json::getValue(data.data));
-
-			if(!json)
+			if(s.ok())
 			{
-				TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", parse to json error." << endl);
+				TarsInputStream<> is;
+				is.setBuffer(value.c_str(), value.length());
+				data.readFrom(is);
 
-				ret = S_JSON_VALUE_NOT_JSON;
+				json = JsonValueObjPtr::dynamicCast(TC_Json::getValue(data.data));
+
+				if (!json)
+				{
+					TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", parse to json error." << endl);
+
+					ret = S_JSON_VALUE_NOT_JSON;
+				}
 			}
 			else
 			{
-				for(auto &e : update.supdate)
+				data.version = 0;
+				data.expireTime = 0;
+				data.timestamp = 0;
+
+				json = new JsonValueObj();
+			}
+
+			if(ret != S_OK)
+			{
+				return ret;
+			}
+
+			for(auto &e : update.supdate)
+			{
+				auto it = json->value.find(e.field);
+				if(it != json->value.end())
 				{
-					auto it = json->value.find(e.field);
-					if(it != json->value.end())
+					auto tIt = this->_updateApply.find(it->second->getType());
+					if(tIt != this->_updateApply.end())
 					{
-						auto tIt = this->_updateApply.find(it->second->getType());
-						if(tIt != this->_updateApply.end())
+						auto rIt = tIt->second.find(e.op);
+
+						if(rIt != tIt->second.end())
 						{
-							auto rIt = tIt->second.find(e.op);
+							ret = rIt->second(it->second, e);
 
-							if(rIt != tIt->second.end())
-							{
-								ret = rIt->second(it->second, e);
-
-								if(ret != S_OK)
-								{
-									TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << " , op:" << etos(e.op) << ", ret:" << etos(ret) << endl);
-									break;
-								}
-							}
-							else
+							if(ret != S_OK)
 							{
 								TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << " , op:" << etos(e.op) << ", ret:" << etos(ret) << endl);
-
-								ret = Base::S_JSON_OPERATOR_NOT_SUPPORT;
+								break;
 							}
 						}
-					}
-					else if(e.op == SO_REPLACE || e.op == SO_ADD_NO_REPEAT || e.op == SO_ADD)
-					{
-						ret = S_OK;
-
-						JsonValuePtr value;
-
-						switch(e.type)
+						else
 						{
-						case Base::FT_INTEGER:
-							value = new JsonValueNum(TC_Common::strto<int64_t>(e.value), true);
-							break;
-						case Base::FT_DOUBLE:
-							value = new JsonValueNum(TC_Common::strto<double>(e.value), false);
-							break;
-						case Base::FT_STRING:
-							value = new JsonValueString(e.value);
-							break;
-						case Base::FT_BOOLEAN:
-							value = new JsonValueBoolean(TC_Port::strncasecmp(e.value.c_str(),"true", e.value.size()) == 0);
-							break;
-						case Base::FT_ARRAY:
-						{
-							value = JsonValueArrayPtr::dynamicCast(TC_Json::getValue(e.value));
-							break;
-						}
-						default:
-							ret = S_JSON_VALUE_TYPE_ERROR;
-						}
+							ret = Base::S_JSON_OPERATOR_NOT_SUPPORT;
 
-						if(value)
-						{
-							json->value[e.field] = value;
+							TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << " , op:" << etos(e.op) << ", ret:" << etos(ret) << endl);
+
+							break;
 						}
 					}
-					else
+				}
+				else if(!e.def.empty())
+				{
+					JsonValuePtr value;
+
+					switch(e.type)
 					{
-						ret = S_JSON_FIELD_NOT_EXITS;
-						TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << " in not exists, op:" << etos(e.op) << ", ret:" << etos(ret) << endl);
+					case Base::FT_INTEGER:
+						value = new JsonValueNum(TC_Common::strto<int64_t>(e.def), true);
+						break;
+					case Base::FT_DOUBLE:
+						value = new JsonValueNum(TC_Common::strto<double>(e.def), false);
+						break;
+					case Base::FT_STRING:
+						value = new JsonValueString(e.def);
+						break;
+					case Base::FT_BOOLEAN:
+						value = new JsonValueBoolean(TC_Port::strncasecmp(e.def.c_str(),"true", e.def.size()) == 0);
+						break;
+					case Base::FT_ARRAY:
+					{
+						value = JsonValueArrayPtr::dynamicCast(TC_Json::getValue(e.def));
 						break;
 					}
+					default:
+						ret = S_JSON_VALUE_TYPE_ERROR;
+						break;
+					}
+
+					if(ret != S_OK)
+					{
+						break;
+					}
+
+					if(value)
+					{
+						json->value[e.field] = value;
+					}
 				}
-
-				if(ret == S_OK)
+				else
 				{
-					TC_Json::writeValue(json, data.data);
-
-//					LOG_CONSOLE_DEBUG << string(data.data.data(), data.data.size()) << endl;
-
-					if(data.expireTime>0)
-					{
-						data.expireTime += TNOW;
-					}
-
-					TarsOutputStream<> buff;
-					while(data.version == 0)
-					{
-						++data.version;
-					}
-
-					data.writeTo(buff);
-
-					batch.Put(handle, rocksdb::Slice(key->data, key->length), rocksdb::Slice(buff.getBuffer(), buff.getLength()));
+					ret = S_JSON_FIELD_NOT_EXITS;
+					TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << " in not exists, op:" << etos(e.op) << ", ret:" << etos(ret) << endl);
+					break;
 				}
 			}
-		}
-		else if(s.IsNotFound())
-		{
-			ret = Base::S_NO_DATA;
+
+			if(ret != S_OK)
+			{
+				return ret;
+			}
+
+			TC_Json::writeValue(json, data.data);
+
+			if (data.expireTime > 0)
+			{
+				data.expireTime += TNOW;
+			}
+
+			TarsOutputStream<> buff;
+			while (data.version == 0)
+			{
+				++data.version;
+			}
+
+			data.writeTo(buff);
+
+			batch.Put(handle, rocksdb::Slice(key->data, key->length), rocksdb::Slice(buff.getBuffer(), buff.getLength()));
 		}
 		else
 		{

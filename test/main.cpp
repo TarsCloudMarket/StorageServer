@@ -1703,6 +1703,7 @@ TEST_F(StorageUnitTest, TestStorageJson)
 		update.value = "[\"def\", \"111\"]";
 		update.field = "strs_new";
 		update.op = Base::SO_ADD_NO_REPEAT;
+		update.def = update.value;
 
 		StorageJson json;
 		json.skey = skey;
@@ -1728,6 +1729,59 @@ TEST_F(StorageUnitTest, TestStorageJson)
 
 	}
 
+	{
+		StorageUpdate update;
+		update.type = Base::FT_STRING;
+		update.value = "55";
+		update.field = "strs_sub";
+		update.op = Base::SO_SUB;
+
+		StorageJson json;
+		json.skey = skey;
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+
+		ASSERT_TRUE(ret == S_JSON_FIELD_NOT_EXITS);
+	}
+
+	{
+		skey.mkey = "test_add";
+		prx->del(skey);
+
+		StorageUpdate update;
+		update.type = Base::FT_ARRAY;
+		update.value = "[\"55\"]";
+		update.field = "strs_array_add";
+		update.op = Base::SO_ADD_NO_REPEAT;
+		update.def = update.value;
+
+		StorageJson json;
+		json.skey = skey;
+		json.skey.mkey = "test_add";
+
+		json.supdate.push_back(update);
+		ret = prx->update(json);
+
+		LOG_CONSOLE_DEBUG << ret << endl;
+
+		ASSERT_TRUE(ret == S_OK);
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		JsonValuePtr pPtr = TC_Json::getValue(string(value.data.data(), value.data.size()));
+
+		JsonValueObjPtr oPtr = JsonValueObjPtr::dynamicCast(pPtr);
+
+		ASSERT_TRUE(oPtr->value.find("strs_array_add") != oPtr->value.end());
+		JsonValueArrayPtr aPtr = JsonValueArrayPtr::dynamicCast(oPtr->value["strs_array_add"]);
+
+		ASSERT_TRUE(aPtr->value.size() == 1);
+		ASSERT_TRUE(JsonValueStringPtr::dynamicCast(aPtr->value[0])->value == "55");
+	}
+
 	raftTest->stopAll();
 }
 
@@ -1737,3 +1791,4 @@ int main(int argc, char** argv)
 
 	return RUN_ALL_TESTS();
 }
+

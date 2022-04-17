@@ -50,12 +50,15 @@ struct StorageData
 };
 
 //基本处理规则如下:
-// SO_ADD 会添加value数据, FT_INTEGER/FT_DOUBLE/FT_BOOLEAN/FT_STRING/FT_ARRAY 有效, 字段不存在则新增且值为value
-// SO_SUB 会减少value数据, FT_INTEGER/FT_DOUBLE/FT_ARRAY 有效, 字段不存在则报错
-// SO_ADD_NO_REPEAT, 会添加不重复的元素, FT_ARRAY, 字段不存在, 则新增字段且值为value
-// SO_REPLACE, 会替换数据, 字段不存在, 则新增字段且值为value
-// SO_REVERSE, 取反, FT_BOOLEAN 有效, 字段不存在则报错
-// 如果字段是数组, 则添加减少的操作既可以是一个元素, 也可以是一批元素, 此时value是json格式的字符串
+// - SO_ADD 会添加value数据, FT_INTEGER/FT_DOUBLE/FT_BOOLEAN/FT_STRING/FT_ARRAY 有效,
+// - SO_SUB 会减少value数据, FT_INTEGER/FT_DOUBLE/FT_ARRAY 有效
+// - SO_ADD_NO_REPEAT 会添加不重复的元素, FT_ARRAY有效
+// - SO_REPLACE 会替换数据, 所有类型有效
+// - SO_REVERSE 取反, FT_BOOLEAN 有效
+// 注意: 当被操作字段是数组时, 则添加减少的操作既可以是一个元素也可以是一批元素, 如果是一批元素, 此时value是json格式的字符串
+// 当数据不存在 or 字段不存在时:
+// - 如果def缺省值没有设置数据, 则报错(S_NO_DATA, S_JSON_FIELD_NOT_EXITS)
+// - 如果def缺省值设置了数据, 则新增数据/字段, 新增字段且值为def, 类型为value的类型
 enum StorageOperator
 {
     SO_REPLACE  = 0,
@@ -82,13 +85,14 @@ struct StorageUpdate
     0 require string field;             //字段名
     1 require StorageOperator op;       //操作
     2 optional string value;            //值
-    3 optional FieldType    type;       //值的类型
+    3 optional FieldType type;       //值的类型
+    4 optional string def;              //缺省值
 };
 
 struct StorageJson
 {
     0 optional StorageKey skey;
-    1 optional vector<StorageUpdate> supdate; //value是json结构体的情况下才生效
+    1 optional vector<StorageUpdate> supdate; //所有更新都成功才会更新记录, 否则返回失败
 };
 
 //分页查询, 必须指定mkey
@@ -131,8 +135,7 @@ interface Storage
     int set(StorageData data);
 
     /**
-     * 更新数据, 注意字段必须存在, 不存在则更新失败!
-     * 如果字段是bool类型, 注意value是: true/false
+     * 更新数据
      * @return int, S_OK: 成功, <0: 失败
      */   
     int update(StorageJson data);
@@ -163,8 +166,7 @@ interface Storage
     int hasBatch(Options opt, vector<StorageKey> data, out map<StorageKey, int> rsp);
 
     /**
-     * 批量更新数据, 注意字段必须存在, 不存在则更新失败!
-     * 如果字段是bool类型, 注意value是: true/false
+     * 批量更新数据, 所有记录成功才算成功, 否则不会更新数据
      * @return int, S_OK: 成功, <0: 失败
      */
     int updateBatch(vector<StorageJson> data);
