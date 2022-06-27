@@ -7,10 +7,9 @@ on:
   pull_request:
     branches:
       - master
-      
+
 jobs:
   build:
-    container: tarscloud/base-compiler
     runs-on: ubuntu-20.04
     steps:
       - name: env
@@ -25,17 +24,14 @@ jobs:
         with:
           submodules: true
           token: ${{ secrets.MY_TOKEN }}
-      - uses: satackey/action-docker-layer-caching@v0.0.11
-        continue-on-error: true
-      - name: Cache build modules
-        uses: actions/cache@v2
-        env:
-          cache-name: cache-build-modules
-        with:
-          path: build 
-          key: ${{ runner.os }}-build-${{ env.cache-name }}
-      - name: make
-        run: mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release && make -j8
-      - name: build docker
+      - name: Create Build
         run: |
-          exec-build-cloud.sh tarscloud/tars.cppbase cpp build/bin/StorageServer yaml/values.yaml latest true
+          docker run --rm --privileged tonistiigi/binfmt:latest --install all
+          docker buildx create --name k8s-framework-builder --use
+          docker buildx inspect --bootstrap --builder k8s-framework-builder
+      - name: Buildx
+        run: |
+          docker run -v `pwd`:/data --entrypoint "" tarscloud/base-deploy sh -c "cd /data && /usr/bin/create-buildx-dockerfile.sh cpp yaml/values.yaml latest Dockerfile"
+      - name: Create Docker
+        run: |
+          ./docker-buildx-cloud.sh
