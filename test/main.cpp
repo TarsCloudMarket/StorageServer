@@ -951,7 +951,7 @@ TEST_F(StorageUnitTest, TestStorageTransBackward)
 			req.skey.table = "test";
 			req.skey.mkey = "abc";
 			req.skey.ukey = TC_Common::outfill("99", '0', 5, false);
-			req.forword = false;
+			req.forward = false;
 
 			vector<StorageData> data;
 
@@ -972,7 +972,7 @@ TEST_F(StorageUnitTest, TestStorageTransBackward)
 			req.skey.mkey = "abc";
 			req.skey.ukey = "";
 			req.limit = 10;
-			req.forword = false;
+			req.forward = false;
 
 			vector<StorageData> data;
 
@@ -993,7 +993,7 @@ TEST_F(StorageUnitTest, TestStorageTransBackward)
 			req.skey.mkey = "abc";
 			req.skey.ukey = "00024";
 			req.limit = 12;
-			req.forword = false;
+			req.forward = false;
 
 			vector<StorageData> data;
 
@@ -1013,7 +1013,7 @@ TEST_F(StorageUnitTest, TestStorageTransBackward)
 			req.skey.mkey = "abc";
 			req.skey.ukey = "00005";
 			req.limit = 12;
-			req.forword = false;
+			req.forward = false;
 
 			vector<StorageData> data;
 

@@ -658,7 +658,7 @@ int StorageStateMachine::trans(const PageReq &req, vector<StorageData> &data)
 
 	auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
 
-	if(req.forword)
+	if(req.forward)
 	{
 		auto k = tokey(req.skey);
 

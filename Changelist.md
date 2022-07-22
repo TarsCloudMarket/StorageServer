@@ -1,3 +1,14 @@
+
+
+## v1.0.1 20220722
+
+### cn
+- 修复参数名错误, forword -> forward
+- StorageKey table也作为key
+### en
+- Fix parameter error: forword -> forward
+- StorageKey table as key
+
 ## v1.0.0 20220417
 
 ### cn

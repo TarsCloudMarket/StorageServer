@@ -31,7 +31,7 @@ struct StorageKey
     2 optional string ukey;     //子key
 };
 
-key[StorageKey, mkey, ukey];
+key[StorageKey, table, mkey, ukey];
 
 //version timestamp 只有一个能生效, 优先version
 struct StorageValue
@@ -102,7 +102,7 @@ struct PageReq
 {
     0 optional StorageKey skey;
     1 optional int limit = 10;
-    2 optional bool forword = true;
+    2 optional bool forward = true;
     3 optional bool include = true;
 };
 
