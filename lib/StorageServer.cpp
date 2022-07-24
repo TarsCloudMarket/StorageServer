@@ -66,6 +66,7 @@ void StorageServer::initialize()
 
 	TARS_ADD_ADMIN_CMD_NORMAL("storage.get", StorageServer::cmdGet);
 	TARS_ADD_ADMIN_CMD_NORMAL("storage.set", StorageServer::cmdSet);
+	TARS_ADD_ADMIN_CMD_NORMAL("storage.trans", StorageServer::cmdTrans);
 }
 
 void StorageServer::destroyApp()
@@ -75,18 +76,24 @@ void StorageServer::destroyApp()
 	onDestroyRaft();
 }
 
-
 //storage.get table mkey ukey
 bool StorageServer::cmdGet(const string&command, const string&params, string& result)
 {
 	vector<string> v = TC_Common::sepstr<string>(params, " ");
 
-	if(v.size() >= 3)
-	{
+    if(v.size() >= 2)
+    {
 		StorageKey skey;
-		skey.table = v[0];
-		skey.mkey = v[1];
-		skey.ukey = v[2];
+
+        if(v.size() >= 2)
+        {
+            skey.table = v[0];
+            skey.mkey = v[1];
+        } 
+        else if(v.size() >= 3)
+        {
+            skey.ukey = v[2];
+        }
 
 		StorageValue data;
 		int ret = _stateMachine->get(skey, data);
@@ -109,7 +116,7 @@ bool StorageServer::cmdGet(const string&command, const string&params, string& re
 	}
 	else
 	{
-		result = "Invalid parameters.Should be: storage.get table mkey ukey";
+		result = "Invalid parameters.Should be: storage.get table mkey ukey or storage.get table mkey";
 	}
 	return true;
 
@@ -119,13 +126,28 @@ bool StorageServer::cmdSet(const string&command, const string&params, string& re
 {
 	vector<string> v = TC_Common::sepstr<string>(params, " ");
 
-	if(v.size() >= 4)
+	if(v.size() >= 2)
 	{
 		StorageData data;
-		data.skey.table = v[0];
-		data.skey.mkey = v[1];
-		data.skey.ukey = v[2];
-		data.svalue.data.assign(v[3].data(), v[3].data()+v[3].size());
+
+        if(v.size() >= 4)
+        {
+            data.skey.table = v[0];
+            data.skey.mkey = v[1];
+            data.skey.ukey = v[2];
+            data.svalue.data.assign(v[3].data(), v[3].data()+v[3].size());
+        }
+        else if(v.size() >= 3)
+        {
+            data.skey.table = v[0];
+            data.skey.mkey = v[1];
+            data.svalue.data.assign(v[2].data(), v[2].data()+v[2].size());
+        }
+		else
+		{
+			data.skey.table = v[0];
+			data.skey.mkey = v[1];
+		}
 
 		StoragePrx prx = _raftNode->getBussLeaderPrx<StoragePrx>();
 		int ret = prx->set(data);
@@ -141,7 +163,62 @@ bool StorageServer::cmdSet(const string&command, const string&params, string& re
 	}
 	else
 	{
-		result = "Invalid parameters.Should be: storage.set table mkey ukey value";
+		result = "Invalid parameters.Should be: storage.set table mkey ukey value or storage.set table mkey value (ukey is empty) or storage.set table mkey (ukey and value is empty)";
 	}
 	return true;
+}
+
+bool StorageServer::cmdTrans(const string&command, const string&params, string& result)
+{
+	vector<string> v = TC_Common::sepstr<string>(params, " ");
+
+	if(v.size() >= 3)
+	{
+		PageReq req;
+
+        if(v.size() >= 5)
+        {
+            req.skey.table = v[0];
+            req.skey.mkey = v[1];
+            req.skey.ukey = v[2];
+			req.forward = v[3] == "true";
+			req.limit = TC_Common::strto<int>(v[4]);
+        }
+        else 
+        {
+            req.skey.table = v[0];
+            req.skey.mkey = v[1];
+			req.forward = v[2] == "true";
+			req.limit = TC_Common::strto<int>(v[2]);
+        }
+
+		StoragePrx prx = _raftNode->getBussLeaderPrx<StoragePrx>();
+
+		vector<Base::StorageData> datas;
+		int ret = _stateMachine->trans(req, datas);
+
+		if(ret == S_OK)
+		{
+			result = "trans succ, size:" + TC_Common::tostr(datas.size());
+
+			for(size_t i = 0; i< datas.size(); i++)
+			{
+				result += "------------------------" + TC_Common::tostr(i)+ "--------------------------------\n";
+				result += "version: " + TC_Common::tostr(datas[i].svalue.version) + "\n";
+				result += "timestamp: " + TC_Common::tostr(datas[i].svalue.timestamp) + "\n";
+				result += "expireTime: " + TC_Common::tostr(datas[i].svalue.expireTime) + "\n";
+				result += "data: " + string(datas[i].svalue.data.data(), datas[i].svalue.data.size()) + "\n";
+			}
+		}
+		else
+		{
+			result = "trans error, ret:" + etos((STORAGE_RT)ret);
+		}
+	}
+	else
+	{
+		result = "Invalid parameters. Should be: storage.trans table mkey ukey forward(true/false) limit or storage.trans table mkey forward(true/false) limit (ukey is empty)";
+	}
+	return true;
+
 }

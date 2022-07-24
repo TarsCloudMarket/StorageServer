@@ -39,6 +39,8 @@ protected:
 	bool cmdGet(const string&command, const string&params, string& result);
 
 	bool cmdSet(const string&command, const string&params, string& result);
+
+	bool cmdTrans(const string&command, const string&params, string& result);
 };
 
 
