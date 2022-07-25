@@ -182,7 +182,6 @@ interface Storage
      * @return int, S_OK: 成功, <0: 失败
      */
     int trans(Options opt, PageReq req, out vector<StorageData> data);
-
 };
 
 }; 

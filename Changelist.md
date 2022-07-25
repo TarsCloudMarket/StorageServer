@@ -1,5 +1,15 @@
 
 
+## v1.0.2 20220725
+
+### cn
+- storage.get/set 支持 ukey是空的情况
+- add storage.trans
+### en
+- storage.get/set support ukey is empty
+- add storage.trans
+
+
 ## v1.0.1 20220722
 
 ### cn

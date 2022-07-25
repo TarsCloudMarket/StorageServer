@@ -41,6 +41,8 @@ protected:
 	bool cmdSet(const string&command, const string&params, string& result);
 
 	bool cmdTrans(const string&command, const string&params, string& result);
+
+	bool cmdDel(const string&command, const string&params, string& result);
 };
 
 

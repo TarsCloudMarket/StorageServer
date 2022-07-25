@@ -20,20 +20,17 @@ void StorageServer::initialize()
 	{
 		dataPath = ServerConfig::DataPath;
 
-		_index = TC_Endpoint(getConfig().get("/tars/application/server/Base.StorageServer.RaftObjAdapter<endpoint>", "")).getPort();
-
-		if(_nodeInfo.nodes.empty())
-		{
-			//_nodeInfo.nodes.push_back(std::make_pair(TC_Endpoint("tcp -h 172.30.0.3 -p 10101"), TC_Endpoint("tcp -h 172.30.0.3 -p 10401 -t 60000")));
-			_nodeInfo.nodes.push_back(std::make_pair(TC_Endpoint("tcp -h 127.0.0.1 -p 10101"),
-					TC_Endpoint("tcp -h 127.0.0.1 -p 10401 -t 60000")));
-//		_nodeInfo.nodes.push_back(std::make_pair(TC_Endpoint("tcp -h 172.30.0.33 -p 10102"), TC_Endpoint("tcp -h 172.30.0.33 -p 10402 -t 60000")));
-			_nodeInfo.nodes.push_back(std::make_pair(TC_Endpoint("tcp -h 127.0.0.1 -p 10102"),
-					TC_Endpoint("tcp -h 127.0.0.1 -p 10402 -t 60000")));
-//		_nodeInfo.nodes.push_back(std::make_pair(TC_Endpoint("tcp -h 172.30.0.34 -p 10103"), TC_Endpoint("tcp -h 172.30.0.34 -p 10403 -t 60000")));
-			_nodeInfo.nodes.push_back(std::make_pair(TC_Endpoint("tcp -h 127.0.0.1 -p 10103"),
-					TC_Endpoint("tcp -h 127.0.0.1 -p 10403 -t 60000")));
-		}
+//		_index = TC_Endpoint(getConfig().get("/tars/application/server/Base.StorageServer.RaftObjAdapter<endpoint>", "")).getPort();
+//
+//		if(_nodeInfo.nodes.empty())
+//		{
+//			_nodeInfo.nodes.push_back(std::make_pair(TC_Endpoint("tcp -h 127.0.0.1 -p 10101"),
+//					TC_Endpoint("tcp -h 127.0.0.1 -p 10401 -t 60000")));
+//			_nodeInfo.nodes.push_back(std::make_pair(TC_Endpoint("tcp -h 127.0.0.1 -p 10102"),
+//					TC_Endpoint("tcp -h 127.0.0.1 -p 10402 -t 60000")));
+//			_nodeInfo.nodes.push_back(std::make_pair(TC_Endpoint("tcp -h 127.0.0.1 -p 10103"),
+//					TC_Endpoint("tcp -h 127.0.0.1 -p 10403 -t 60000")));
+//		}
 	}
 	else
 	{
@@ -67,6 +64,7 @@ void StorageServer::initialize()
 	TARS_ADD_ADMIN_CMD_NORMAL("storage.get", StorageServer::cmdGet);
 	TARS_ADD_ADMIN_CMD_NORMAL("storage.set", StorageServer::cmdSet);
 	TARS_ADD_ADMIN_CMD_NORMAL("storage.trans", StorageServer::cmdTrans);
+	TARS_ADD_ADMIN_CMD_NORMAL("storage.del", StorageServer::cmdDel);
 }
 
 void StorageServer::destroyApp()
@@ -221,4 +219,42 @@ bool StorageServer::cmdTrans(const string&command, const string&params, string& 
 	}
 	return true;
 
+}
+
+bool StorageServer::cmdDel(const string&command, const string&params, string& result)
+{
+	vector<string> v = TC_Common::sepstr<string>(params, " ");
+
+	if(v.size() >= 3)
+	{
+		StorageKey skey;
+
+		if(v.size() >= 2)
+		{
+			skey.table = v[0];
+			skey.mkey = v[1];
+		}
+		else if(v.size() >= 3)
+		{
+			skey.ukey = v[2];
+		}
+
+		StoragePrx prx = _raftNode->getBussLeaderPrx<StoragePrx>();
+
+		int ret = prx->del(skey);
+
+		if(ret == S_OK)
+		{
+			result = "delete succ";
+		}
+		else
+		{
+			result = "del error, ret:" + etos((STORAGE_RT)ret);
+		}
+	}
+	else
+	{
+		result = "Invalid parameters. Should be: storage.del table mkey ukey or storage.del table mkey (ukey is empty means delete all ukey)";
+	}
+	return true;
 }
