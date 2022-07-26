@@ -87,8 +87,9 @@ bool StorageServer::cmdGet(const string&command, const string&params, string& re
         {
             skey.table = v[0];
             skey.mkey = v[1];
-        } 
-        else if(v.size() >= 3)
+        }
+
+        if(v.size() >= 3)
         {
             skey.ukey = v[2];
         }
@@ -234,7 +235,8 @@ bool StorageServer::cmdDel(const string&command, const string&params, string& re
 			skey.table = v[0];
 			skey.mkey = v[1];
 		}
-		else if(v.size() >= 3)
+
+		if(v.size() >= 3)
 		{
 			skey.ukey = v[2];
 		}
