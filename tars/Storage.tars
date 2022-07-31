@@ -17,6 +17,10 @@ enum STORAGE_RT
     S_JSON_FIELD_TYPE_ERROR         = -10,  //update时, 字段类型错误
     S_JSON_VALUE_TYPE_ERROR         = -11,  //update时, 值类型错误
     S_JSON_VALUE_NOT_JSON           = -12,  //update时, value不是json对象
+    S_QUEUE_NAME                    = -13,  //队列名不合法(为空)
+    S_QUEUE_EXIST                   = -14,  //队列已经存在
+    S_QUEUE_NOT_EXIST               = -15,  //队列不存在
+
 };
 
 struct Options
@@ -106,6 +110,13 @@ struct PageReq
     3 optional bool include = true;
 };
 
+//队列请求
+struct QueueReq
+{
+    0 optional string queue;
+    1 optional vector<byte> data;
+};
+
 interface Storage
 {
     /**
@@ -182,6 +193,55 @@ interface Storage
      * @return int, S_OK: 成功, <0: 失败
      */
     int trans(Options opt, PageReq req, out vector<StorageData> data);
+
+    ///////////////////////////////////////////////////////////////////////////////
+    /**
+     * 创建队列
+     * @return int, S_OK: 成功, <0: 失败
+     */
+    int createQueue(string queue);
+
+    /**
+     * 队列最后放入数据
+     * @return int, S_OK: 成功, <0: 失败
+     */
+    int push_back(QueueReq req);
+
+    /**
+     * 队列最前面放入数据
+     * @return int, S_OK: 成功, <0: 失败
+     */
+    int push_front(QueueReq req);
+
+    /**
+     * 队列从头部获取数据
+     * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
+     */
+    int get_front(Options opt, string queue, out vector<byte> data);
+
+    /**
+     * 队列从头部获取数据
+     * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
+     */
+    int get_back(Options opt, string queue, out vector<byte> data);
+
+    /**
+     * 队列从头部获取数据并删除之
+     * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
+     */
+    int pop_front(string queue, out vector<byte> data);
+
+    /**
+     * 队列从尾部获取数据并删除之
+     * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
+     */
+    int pop_back(string queue, out vector<byte> data);
+
+    /**
+     * 清空队列
+     * @return int, S_OK: 成功, <0: 失败
+     */
+    int clearQueue(string queue);
 };
 
 }; 

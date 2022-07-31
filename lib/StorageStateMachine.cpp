@@ -15,13 +15,20 @@
 #include "Storage.h"
 using namespace Base;
 
-const string StorageStateMachine::SET_TYPE  = "1";
-const string StorageStateMachine::BSET_TYPE = "2";
-const string StorageStateMachine::DEL_TYPE  = "3";
-const string StorageStateMachine::BDEL_TYPE = "4";
-const string StorageStateMachine::TABLE_TYPE = "5";
-const string StorageStateMachine::SET_JSON_TYPE = "6";
-const string StorageStateMachine::BSET_JSON_TYPE = "7";
+const string StorageStateMachine::SET_TYPE  = "m1";
+const string StorageStateMachine::BSET_TYPE = "m2";
+const string StorageStateMachine::DEL_TYPE  = "m3";
+const string StorageStateMachine::BDEL_TYPE = "m4";
+const string StorageStateMachine::TABLE_TYPE = "m5";
+const string StorageStateMachine::SET_JSON_TYPE = "m6";
+const string StorageStateMachine::BSET_JSON_TYPE = "m7";
+
+const string StorageStateMachine::QUEUE_TYPE = "q1";
+const string StorageStateMachine::PUSH_BACK_TYPE = "q2";
+const string StorageStateMachine::PUSH_FRONT_TYPE = "q3";
+const string StorageStateMachine::POP_BACK_DEL_TYPE = "q6";
+const string StorageStateMachine::POP_FRONT_DEL_TYPE = "q7";
+const string StorageStateMachine::CLEAR_QUEUE_TYPE = "q8";
 
 //////////////////////////////////////////////////////////////////////////////////////
 class TTLCompactionFilter : public rocksdb::CompactionFilter
@@ -98,6 +105,40 @@ public:
 };
 
 //////////////////////////////////////////////////////////////////////////////////////
+
+class QueueKeyComparator : public rocksdb::Comparator
+{
+protected:
+	void FindShortestSeparator(std::string *, const rocksdb::Slice &) const
+	{
+	}
+	void FindShortSuccessor(std::string *) const
+	{
+	}
+
+public:
+	int Compare(const rocksdb::Slice &a, const rocksdb::Slice &b) const
+	{
+		int64_t index1 = ntohll(*(int64_t*)(a.data()));
+
+		int64_t index2 = ntohll(*(int64_t*)(b.data()));
+
+		if(index1 == index2)
+		{
+			return 0;
+		}
+
+		return index1 < index2 ? -1 : 1;
+	}
+
+	// Ignore the following methods for now:
+	const char *Name() const
+	{
+		return "Storage.QueueKeyComparator";
+	}
+};
+
+//////////////////////////////////////////////////////////////////////////////////////
 StorageStateMachine::StorageStateMachine(const string &dataPath)
 {
 	_raftDataDir = dataPath;
@@ -109,6 +150,14 @@ StorageStateMachine::StorageStateMachine(const string &dataPath)
 	_onApply[TABLE_TYPE] = std::bind(&StorageStateMachine::onCreateTable, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[SET_JSON_TYPE] = std::bind(&StorageStateMachine::onUpdate, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[BSET_JSON_TYPE] = std::bind(&StorageStateMachine::onUpdateBatch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+
+
+	_onApply[QUEUE_TYPE] = std::bind(&StorageStateMachine::onCreateQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[PUSH_BACK_TYPE] = std::bind(&StorageStateMachine::onPushBack, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[PUSH_FRONT_TYPE] = std::bind(&StorageStateMachine::onPushFront, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[POP_BACK_DEL_TYPE] = std::bind(&StorageStateMachine::onPopBack, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[POP_FRONT_DEL_TYPE] = std::bind(&StorageStateMachine::onPopFront, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[CLEAR_QUEUE_TYPE] = std::bind(&StorageStateMachine::onClearQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 
 	_updateApply[eJsonTypeString][SO_REPLACE] = std::bind(&StorageStateMachine::updateStringReplace, this, std::placeholders::_1, std::placeholders::_2);
 	_updateApply[eJsonTypeString][SO_ADD] = std::bind(&StorageStateMachine::updateStringAdd, this, std::placeholders::_1, std::placeholders::_2);
@@ -190,10 +239,10 @@ StorageKey StorageStateMachine::keyto(const char *key, size_t length)
 	return skey;
 }
 
-rocksdb::ColumnFamilyHandle* StorageStateMachine::get(const string &table)
+rocksdb::ColumnFamilyHandle* StorageStateMachine::getTable(const string &table)
 {
 	//防止和系统的default重名!
-	string dTable = tableName(table);//"d-" + table;
+	string dTable = tableName(table);
 
 	std::lock_guard<std::mutex> lock(_mutex);
 
@@ -204,6 +253,23 @@ rocksdb::ColumnFamilyHandle* StorageStateMachine::get(const string &table)
 	}
 
 	TLOG_ERROR("no table:" << dTable << endl);
+	return NULL;
+}
+
+rocksdb::ColumnFamilyHandle* StorageStateMachine::getQueue(const string &queue)
+{
+	//防止和系统的default重名!
+	string dTable = queueName(queue);
+
+	std::lock_guard<std::mutex> lock(_mutex);
+
+	auto it = _column_familys.find(dTable);
+	if(it != _column_familys.end())
+	{
+		return it->second;
+	}
+
+	TLOG_ERROR("no queue:" << dTable << endl);
 	return NULL;
 }
 
@@ -218,7 +284,6 @@ void StorageStateMachine::open(const string &dbDir)
 	options.create_if_missing = true;
 	options.level_compaction_dynamic_level_bytes = true;
 	options.periodic_compaction_seconds = 3600;
-	options.compaction_filter = new TTLCompactionFilter();
 
 	std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
 
@@ -245,7 +310,17 @@ void StorageStateMachine::open(const string &dbDir)
 
 			if (c.name != "default" )
 			{
-				c.options.comparator = new StorageKeyComparator();
+				if(TC_Port::strncasecmp(c.name.c_str(), "t-", 2) == 0)
+				{
+					c.options.comparator = new StorageKeyComparator();
+					c.options.compaction_filter = new TTLCompactionFilter();
+
+				}
+				else
+				{
+					c.options.comparator = new QueueKeyComparator();
+					c.options.compaction_filter = NULL;
+				}
 			}
 
 			columnFamiliesDesc.push_back(c);
@@ -413,7 +488,7 @@ void StorageStateMachine::onApply(const char *buff, size_t length, int64_t appli
 
 int StorageStateMachine::has(const StorageKey &skey)
 {
-	auto handle = get(skey.table);
+	auto handle = getTable(skey.table);
 	if(!handle)
 	{
 		return S_TABLE_NOT_EXIST;
@@ -465,7 +540,7 @@ int StorageStateMachine::get(const StorageKey &skey, StorageValue &data)
 {
 	TLOG_DEBUG("table:" << skey.table << ", mkey:" << skey.mkey << ", ukey:" << skey.ukey << endl);
 
-	auto handle = get(skey.table);
+	auto handle = getTable(skey.table);
 	if(!handle)
 	{
 		TLOG_ERROR("table:" << skey.table << ", mkey:" << skey.mkey << ", ukey:" << skey.ukey << ", table not exists!" << endl);
@@ -524,7 +599,7 @@ int StorageStateMachine::hasBatch(const vector<StorageKey> &skey, map<StorageKey
 		v.push_back(tokey(skey[i]));
 		keys.push_back(rocksdb::Slice(v[i]->data, v[i]->length));
 
-		auto handle = get(skey[i].table);
+		auto handle = getTable(skey[i].table);
 		if(!handle)
 		{
 			TLOG_ERROR("table:" << skey[i].table << ", mkey:" << skey[i].mkey << ", ukey:" << skey[i].ukey << ", table not exists" << endl);
@@ -586,7 +661,7 @@ int StorageStateMachine::get(const vector<StorageKey> &skey, vector<StorageData>
 		v.push_back(tokey(skey[i]));
 		keys.push_back(rocksdb::Slice(v[i]->data, v[i]->length));
 
-		auto handle = get(skey[i].table);
+		auto handle = getTable(skey[i].table);
 		if(!handle)
 		{
 			TLOG_ERROR("table:" << skey[i].table << ", mkey:" << skey[i].mkey << ", ukey:" << skey[i].ukey << ", table not exists" << endl);
@@ -648,7 +723,7 @@ int StorageStateMachine::trans(const PageReq &req, vector<StorageData> &data)
 {
 	data.clear();
 
-	auto handle = get(req.skey.table);
+	auto handle = getTable(req.skey.table);
 	if(!handle)
 	{
 		TLOG_ERROR("table:" << req.skey.table << ", mkey:" << req.skey.mkey << ", ukey:" << req.skey.ukey << ", table not exists" << endl);
@@ -748,7 +823,7 @@ int StorageStateMachine::trans(const PageReq &req, vector<StorageData> &data)
 		}
 	}
 
-	TLOG_ERROR("table:" << req.skey.table << ", mkey:" << req.skey.mkey << ", ukey:" << req.skey.ukey << ", result size: " << data.size() << endl);
+	TLOG_DEBUG("table:" << req.skey.table << ", mkey:" << req.skey.mkey << ", ukey:" << req.skey.ukey << ", forward:" << req.forward << ", limit:" << req.limit << ", result size: " << data.size() << endl);
 
 	return S_OK;
 }
@@ -828,7 +903,7 @@ void StorageStateMachine::onSet(TarsInputStream<> &is, int64_t appliedIndex, con
 
 	int ret;
 
-	auto handle = get(data.skey.table);
+	auto handle = getTable(data.skey.table);
 
 	if(!handle)
 	{
@@ -871,7 +946,7 @@ int StorageStateMachine::onUpdateJson(rocksdb::WriteBatch &batch, const StorageJ
 {
 	STORAGE_RT ret = S_OK;
 
-	auto handle = get(update.skey.table);
+	auto handle = getTable(update.skey.table);
 
 	if(!handle)
 	{
@@ -1105,7 +1180,7 @@ void StorageStateMachine::onSetBatch(TarsInputStream<> &is, int64_t appliedIndex
 
 	for(auto &data : vdata)
 	{
-		auto handle = get(data.skey.table);
+		auto handle = getTable(data.skey.table);
 
 		if(!handle)
 		{
@@ -1168,12 +1243,12 @@ void StorageStateMachine::onDel(TarsInputStream<> &is, int64_t appliedIndex, con
 
 	if(!skey.ukey.empty())
 	{
-		batch.Delete(get(skey.table), rocksdb::Slice(key->data, key->length));
+		batch.Delete(getTable(skey.table), rocksdb::Slice(key->data, key->length));
 	}
 	else
 	{
 		auto upperKey = tokeyUpper(skey.mkey);
-		batch.DeleteRange(get(skey.table), rocksdb::Slice(key->data, key->length), rocksdb::Slice(upperKey->data, upperKey->length));
+		batch.DeleteRange(getTable(skey.table), rocksdb::Slice(key->data, key->length), rocksdb::Slice(upperKey->data, upperKey->length));
 	}
 
 	writeBatch(batch, appliedIndex);
@@ -1200,7 +1275,7 @@ void StorageStateMachine::onDelBatch(TarsInputStream<> &is, int64_t appliedIndex
 	for(auto &skey : skeys)
 	{
 		auto key = tokey(skey);
-		auto handle = get(skey.table);
+		auto handle = getTable(skey.table);
 		if(!handle)
 		{
 			continue;
@@ -1213,7 +1288,7 @@ void StorageStateMachine::onDelBatch(TarsInputStream<> &is, int64_t appliedIndex
 		else
 		{
 			auto upperKey = tokeyUpper(skey.mkey);
-			batch.DeleteRange(get(skey.table), rocksdb::Slice(key->data, key->length), rocksdb::Slice(upperKey->data, upperKey->length));
+			batch.DeleteRange(getTable(skey.table), rocksdb::Slice(key->data, key->length), rocksdb::Slice(upperKey->data, upperKey->length));
 		}
 
 	}
@@ -1270,6 +1345,7 @@ void StorageStateMachine::onCreateTable(TarsInputStream<> &is, int64_t appliedIn
 		rocksdb::ColumnFamilyHandle* handle;
 		rocksdb::ColumnFamilyOptions options;
 		options.comparator = new StorageKeyComparator();
+		options.compaction_filter = new TTLCompactionFilter();
 
 		auto status = _db->CreateColumnFamily(options, table, &handle);
 		if (!status.ok())
@@ -1639,4 +1715,333 @@ STORAGE_RT StorageStateMachine::updateArrayAddNoRepeat(JsonValuePtr &value, cons
 	}
 
 	return S_OK;
+}
+
+int StorageStateMachine::get_back(const string &queue, vector<char> &data)
+{
+	TLOG_DEBUG("queue:" << queue << endl);
+
+	auto handle = getQueue(queue);
+	if(!handle)
+	{
+		TLOG_ERROR("queue:" << queue << ", queue not exists!" << endl);
+		return S_QUEUE_NOT_EXIST;
+	}
+
+	auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+
+	it->SeekToLast();
+
+	if(!it->Valid())
+	{
+		TLOG_DEBUG("queue:" << queue << " no data" << endl);
+
+		return S_NO_DATA;
+	}
+
+	rocksdb::Slice value = it->value();
+
+	data.assign(value.data(), value.data() + value.size());
+
+//	LOG_CONSOLE_DEBUG << string(data.data(), data.size()) << endl;
+
+	TLOG_DEBUG("queue:" << queue << " succ, size:" << value.size() << endl);
+
+	return S_OK;
+}
+
+int StorageStateMachine::get_front(const string &queue, vector<char> &data)
+{
+	TLOG_DEBUG("queue:" << queue << endl);
+
+	auto handle = getQueue(queue);
+	if(!handle)
+	{
+		TLOG_ERROR("queue:" << queue << ", queue not exists!" << endl);
+		return S_QUEUE_NOT_EXIST;
+	}
+
+	auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+
+	it->SeekToFirst();
+
+	if(!it->Valid())
+	{
+		TLOG_DEBUG("queue:" << queue << " no data" << endl);
+
+		return S_NO_DATA;
+	}
+
+	rocksdb::Slice value = it->value();
+
+	data.assign(value.data(), value.data() + value.size());
+
+	TLOG_DEBUG("queue:" << queue << " succ, size:" << value.size() << endl);
+
+	return S_OK;
+}
+
+void StorageStateMachine::onCreateQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	string queue;
+	is.read(queue, 1, false);
+
+	queue = queueName(queue);
+
+	TLOG_DEBUG("queue name:" << queue << ", appliedIndex:" << appliedIndex << endl);
+
+	int ret = S_OK;
+	rocksdb::WriteBatch batch;
+
+	writeBatch(batch, appliedIndex);
+
+	bool exist = false;
+
+	{
+		std::lock_guard<std::mutex> lock(_mutex);
+		if(_column_familys.find(queue) != _column_familys.end())
+		{
+			exist = true;
+		}
+	}
+
+	TLOG_ERROR("queue name:" << queue << ", exists:" << exist << endl);
+
+	if(exist)
+	{
+		if(callback)
+		{
+			//如果客户端请求过来的, 直接回包
+			//如果是其他服务器同步过来, 不用回包了
+			TLOG_DEBUG("queue name:" << queue << ", appliedIndex:" << appliedIndex << ", response succ S_QUEUE_EXIST" << endl);
+
+			Storage::async_response_createQueue(callback->getCurrentPtr(), S_QUEUE_EXIST);
+		}
+	}
+	else
+	{
+		rocksdb::ColumnFamilyHandle* handle;
+		rocksdb::ColumnFamilyOptions options;
+		options.comparator = new QueueKeyComparator();
+		options.compaction_filter = nullptr;
+
+		auto status = _db->CreateColumnFamily(options, queue, &handle);
+		if (!status.ok())
+		{
+			TLOG_ERROR("CreateColumnFamily error:" << status.ToString() << endl);
+			throw std::runtime_error(status.ToString());
+		}
+
+		{
+			std::lock_guard<std::mutex> lock(_mutex);
+			_column_familys[queue] = handle;
+		}
+		if(callback)
+		{
+			TLOG_DEBUG("queue name:" << queue << ", appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
+
+			Storage::async_response_createQueue(callback->getCurrentPtr(), ret);
+		}
+	}
+}
+
+void StorageStateMachine::onPushBack(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	QueueReq req;
+
+	is.read(req, 1, false);
+
+	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", buffer size:" << req.queue.length() << endl);
+
+	int ret;
+
+	auto handle = getQueue(req.queue);
+
+	if(!handle)
+	{
+		TLOG_ERROR("queue:" << req.queue << ", queue not exists" << endl);
+
+		ret = S_QUEUE_NOT_EXIST;
+	}
+	else
+	{
+		rocksdb::WriteBatch batch;
+
+		batch.Put(handle, rocksdb::Slice((const char*)&appliedIndex, sizeof(appliedIndex)), rocksdb::Slice(req.data.data(), req.data.size()));
+
+		writeBatch(batch, appliedIndex);
+	}
+
+	if(callback)
+	{
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
+
+		Storage::async_response_push_back(callback->getCurrentPtr(), ret);
+	}
+}
+
+void StorageStateMachine::onPushFront(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	QueueReq req;
+
+	is.read(req, 1, false);
+
+	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", buffer size:" << req.queue.length() << endl);
+
+	int ret;
+
+	auto handle = getQueue(req.queue);
+
+	if(!handle)
+	{
+		TLOG_ERROR("queue:" << req.queue << ", queue not exists" << endl);
+
+		ret = S_QUEUE_NOT_EXIST;
+	}
+	else
+	{
+		//最小值
+		auto minAppliedIndex = -appliedIndex;
+
+		rocksdb::WriteBatch batch;
+
+		batch.Put(handle, rocksdb::Slice((const char*)&minAppliedIndex, sizeof(minAppliedIndex)), rocksdb::Slice(req.data.data(), req.data.size()));
+
+		writeBatch(batch, appliedIndex);
+	}
+
+	if(callback)
+	{
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
+
+		Storage::async_response_push_front(callback->getCurrentPtr(), ret);
+	}
+}
+
+void StorageStateMachine::onPopBack(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	string queue;
+
+	is.read(queue, 1, false);
+
+	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", queue:" << queue << endl);
+
+	int ret;
+
+	auto handle = getQueue(queue);
+
+	auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+
+	it->SeekToLast();
+
+	vector<char> data;
+	if(!it->Valid())
+	{
+		TLOG_DEBUG("queue:" << queue << " no data" << endl);
+		ret = S_NO_DATA;
+	}
+	else
+	{
+		rocksdb::Slice value = it->value();
+		data.assign(value.data(), value.data() + value.size());
+
+		rocksdb::WriteBatch batch;
+
+		batch.Delete(handle, rocksdb::Slice((const char*)&appliedIndex, sizeof(appliedIndex)));
+
+		writeBatch(batch, appliedIndex);
+
+		ret = S_OK;
+	}
+
+	if(callback)
+	{
+		TLOG_DEBUG("queue:" << queue << " succ, buff size:" << data.size() << endl);
+		Storage::async_response_pop_back(callback->getCurrentPtr(), ret, data);
+	}
+}
+
+void StorageStateMachine::onPopFront(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	string queue;
+
+	is.read(queue, 1, false);
+
+	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", queue:" << queue << endl);
+
+	int ret;
+
+	auto handle = getQueue(queue);
+
+	auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+
+	it->SeekToFirst();
+
+	vector<char> data;
+	if(!it->Valid())
+	{
+		TLOG_DEBUG("queue:" << queue << " no data" << endl);
+		ret = S_NO_DATA;
+	}
+	else
+	{
+		rocksdb::Slice value = it->value();
+		data.assign(value.data(), value.data() + value.size());
+
+		rocksdb::WriteBatch batch;
+
+		batch.Delete(handle, rocksdb::Slice((const char*)&appliedIndex, sizeof(appliedIndex)));
+
+		writeBatch(batch, appliedIndex);
+
+		ret = S_OK;
+	}
+
+	if(callback)
+	{
+		TLOG_DEBUG("queue:" << queue << " succ, buff size:" << data.size() << endl);
+		Storage::async_response_pop_back(callback->getCurrentPtr(), ret, data);
+	}
+}
+
+void StorageStateMachine::onClearQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	string queue;
+
+	is.read(queue, 1, false);
+
+	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", queue:" << queue << endl);
+
+	int ret;
+
+	auto handle = getQueue(queue);
+
+	if(!handle)
+	{
+		TLOG_ERROR("queue:" << queue << ", queue not exists" << endl);
+
+		ret = S_QUEUE_NOT_EXIST;
+	}
+	else
+	{
+		rocksdb::WriteBatch batch;
+
+		auto_ptr<rocksdb::Iterator> itFirst(_db->NewIterator(rocksdb::ReadOptions(), handle));
+		itFirst->SeekToFirst();
+
+		if(itFirst->Valid()) {
+			batch.DeleteRange(handle, itFirst->key(), rocksdb::Slice());
+		}
+
+		writeBatch(batch, appliedIndex);
+
+		ret = S_OK;
+	}
+
+	if(callback)
+	{
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
+
+		Storage::async_response_clearQueue(callback->getCurrentPtr(), ret);
+	}
 }

@@ -94,6 +94,54 @@ public:
      */    
     virtual int trans(const Options &options, const PageReq &req, vector<StorageData> &data, CurrentPtr current);
 
+
+	/**
+	 * 创建队列
+	 * @return int, S_OK: 成功, <0: 失败
+	 */
+	virtual int createQueue(const string &queue, CurrentPtr current);
+
+	/**
+	 * 队列最后放入数据
+	 * @return int, S_OK: 成功, <0: 失败
+	 */
+	virtual int push_back(const QueueReq &req, CurrentPtr current);
+
+	/**
+	 * 队列最前面放入数据
+	 * @return int, S_OK: 成功, <0: 失败
+	 */
+	virtual int push_front(const QueueReq &req, CurrentPtr current);
+
+	/**
+	 * 队列从头部获取数据
+	 * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
+	 */
+	virtual int get_front(const Options &options, const string &queue, vector<char> &data, CurrentPtr current);
+
+	/**
+	 * 队列从头部获取数据
+	 * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
+	 */
+	virtual int get_back(const Options &options, const string &queue, vector<char> &data, CurrentPtr current);
+
+	/**
+	 * 队列从头部获取数据并删除
+	 * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
+	 */
+	virtual int pop_front(const string &queue, vector<char> &data, CurrentPtr current);
+
+	/**
+	 * 队列从尾部获取数据并删除
+	 * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
+	 */
+	virtual int pop_back(const string &queue, vector<char> &data, CurrentPtr current);
+
+	/**
+	 * 清空队列
+	 * @return int, S_OK: 成功, <0: 失败
+	 */
+	virtual int clearQueue(const string &queue, CurrentPtr current);
 protected:
 
 	shared_ptr<RaftNode>    _raftNode;

@@ -39,6 +39,13 @@ public:
 	{
 	}
 
+	void testCreateQueue(const shared_ptr<StorageServer> &server)
+	{
+		StoragePrx prx = server->node()->getBussLeaderPrx<StoragePrx>();
+		int ret = prx->createQueue("test");
+		ASSERT_TRUE(ret == 0);
+	}
+
 	void testCreateTable(const shared_ptr<StorageServer> &server)
 	{
 		StoragePrx prx = server->node()->getBussLeaderPrx<StoragePrx>();
@@ -1781,6 +1788,131 @@ TEST_F(StorageUnitTest, TestStorageJson)
 		ASSERT_TRUE(aPtr->value.size() == 1);
 		ASSERT_TRUE(JsonValueStringPtr::dynamicCast(aPtr->value[0])->value == "55");
 	}
+
+	raftTest->stopAll();
+}
+
+
+TEST_F(StorageUnitTest, TestStorageCreateQueue)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	int ret;
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+	ret = prx->createQueue("test");
+	ASSERT_TRUE(ret == S_OK);
+	ret = prx->createQueue("test");
+	ASSERT_TRUE(ret == S_QUEUE_EXIST);
+
+	raftTest->stopAll();
+}
+
+TEST_F(StorageUnitTest, TestStoragePushBack)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	int ret;
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+	prx->createQueue("test");
+
+	Base::QueueReq req;
+	req.queue = "test";
+	req.data.assign(10, 'a');
+	ret = prx->push_back(req);
+
+	ASSERT_TRUE(ret == S_OK);
+
+	Base::Options options;
+	options.leader = true;
+	vector<char> data;
+	ret = prx->get_back(options, "test", data);
+
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(data == req.data);
+
+	raftTest->stopAll();
+}
+
+
+TEST_F(StorageUnitTest, TestStoragePushFront)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	int ret;
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+	prx->createQueue("test");
+
+	Base::QueueReq req;
+	req.queue = "test";
+	req.data.assign(10, 'a');
+	ret = prx->push_front(req);
+
+	ASSERT_TRUE(ret == S_OK);
+
+	Base::Options options;
+	options.leader = true;
+	vector<char> data;
+	ret = prx->get_front(options, "test", data);
+
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(data == req.data);
+
+	raftTest->stopAll();
+}
+
+
+TEST_F(StorageUnitTest, TestStorageClearQueue)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	int ret;
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+	prx->createQueue("test");
+
+	Base::QueueReq req;
+	req.queue = "test";
+	req.data.assign(10, 'a');
+	ret = prx->push_front(req);
+	ASSERT_TRUE(ret == S_OK);
+
+	ret = prx->clearQueue("test");
+	LOG_CONSOLE_DEBUG << ret << endl;
+	ASSERT_TRUE(ret == S_OK);
+
+	Base::Options options;
+	options.leader = true;
+	vector<char> data;
+	ret = prx->get_front(options, "test", data);
+
+	ASSERT_TRUE(ret == S_NO_DATA);
 
 	raftTest->stopAll();
 }

@@ -34,6 +34,14 @@ public:
 	const static string TABLE_TYPE;
 	const static string SET_JSON_TYPE  ;
 	const static string BSET_JSON_TYPE;
+
+	const static string QUEUE_TYPE;
+	const static string PUSH_BACK_TYPE;
+	const static string PUSH_FRONT_TYPE;
+	const static string POP_BACK_DEL_TYPE;
+	const static string POP_FRONT_DEL_TYPE;
+	const static string CLEAR_QUEUE_TYPE;
+
 	/**
 	 * 构造
 	 * @param dataPath
@@ -150,6 +158,22 @@ public:
 	int trans(const PageReq &req, vector<StorageData> &data);
 
 	/**
+	 * 获取队列尾部数据
+	 * @param queue
+	 * @param data
+	 * @return
+	 */
+	int get_back(const string &queue, vector<char> &data);
+
+	/**
+	 * 获取队列头部数据
+	 * @param queue
+	 * @param data
+	 * @return
+	 */
+	int get_front(const string &queue, vector<char> &data);
+
+	/**
 	 * 关闭数据库
 	 */
 	void close();
@@ -180,6 +204,10 @@ protected:
 	};
 
 	void open(const string &dbDir);
+	string getDbDir() { return _raftDataDir + FILE_SEP + "rocksdb_data"; }
+
+	string tableName(const string &table) { return "t-" + table; }
+
 	int checkStorageData(rocksdb::ColumnFamilyHandle* handle, const StorageData &data);
 	bool isExpire(TarsInputStream<> &is);
 	void onSet(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
@@ -197,10 +225,9 @@ protected:
 	shared_ptr<AutoSlice> tokey(const StorageKey &key);
 	shared_ptr<AutoSlice> tokeyUpper(const string &mkey);
 	StorageKey keyto(const char *key, size_t length);
-	string tableName(const string &table) { return "t-" + table; }
-	string getDbDir() { return _raftDataDir + FILE_SEP + "rocksdb_data"; }
 
-	rocksdb::ColumnFamilyHandle* get(const string &table);
+	rocksdb::ColumnFamilyHandle* getTable(const string &table);
+	rocksdb::ColumnFamilyHandle* getQueue(const string &queue);
 
 	STORAGE_RT updateStringReplace(JsonValuePtr &value, const Base::StorageUpdate &update);
 	STORAGE_RT updateStringAdd(JsonValuePtr &value, const Base::StorageUpdate &update);
@@ -213,6 +240,14 @@ protected:
 	STORAGE_RT updateArrayAdd(JsonValuePtr &value, const Base::StorageUpdate &update);
 	STORAGE_RT updateArraySub(JsonValuePtr &value, const Base::StorageUpdate &update);
 	STORAGE_RT updateArrayAddNoRepeat(JsonValuePtr &value, const Base::StorageUpdate &update);
+
+	string queueName(const string &table) { return "q-" + table; }
+	void onCreateQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onPushBack(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onPushFront(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onPopBack(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onPopFront(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onClearQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 
 protected:
 	string          _raftDataDir;
