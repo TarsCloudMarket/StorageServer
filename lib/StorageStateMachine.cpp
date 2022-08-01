@@ -28,7 +28,8 @@ const string StorageStateMachine::PUSH_BACK_TYPE = "q2";
 const string StorageStateMachine::PUSH_FRONT_TYPE = "q3";
 const string StorageStateMachine::POP_BACK_DEL_TYPE = "q6";
 const string StorageStateMachine::POP_FRONT_DEL_TYPE = "q7";
-const string StorageStateMachine::CLEAR_QUEUE_TYPE = "q8";
+const string StorageStateMachine::DEL_DATA_TYPE = "q8";
+const string StorageStateMachine::CLEAR_QUEUE_TYPE = "q9";
 
 //////////////////////////////////////////////////////////////////////////////////////
 class TTLCompactionFilter : public rocksdb::CompactionFilter
@@ -119,9 +120,9 @@ protected:
 public:
 	int Compare(const rocksdb::Slice &a, const rocksdb::Slice &b) const
 	{
-		int64_t index1 = ntohll(*(int64_t*)(a.data()));
+		int64_t index1 = tars::tars_ntohll(*(int64_t*)(a.data()));
 
-		int64_t index2 = ntohll(*(int64_t*)(b.data()));
+		int64_t index2 = tars::tars_ntohll(*(int64_t*)(b.data()));
 
 		if(index1 == index2)
 		{
@@ -153,6 +154,7 @@ StorageStateMachine::StorageStateMachine(const string &dataPath)
 
 
 	_onApply[QUEUE_TYPE] = std::bind(&StorageStateMachine::onCreateQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[DEL_DATA_TYPE] = std::bind(&StorageStateMachine::onDeleteData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[PUSH_BACK_TYPE] = std::bind(&StorageStateMachine::onPushBack, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[PUSH_FRONT_TYPE] = std::bind(&StorageStateMachine::onPushFront, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[POP_BACK_DEL_TYPE] = std::bind(&StorageStateMachine::onPopBack, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
@@ -1717,7 +1719,8 @@ STORAGE_RT StorageStateMachine::updateArrayAddNoRepeat(JsonValuePtr &value, cons
 	return S_OK;
 }
 
-int StorageStateMachine::get_back(const string &queue, vector<char> &data)
+/////////////////////////////////////////////////////////////////////////////////////////////
+int StorageStateMachine::get_back(const string &queue, QueueRsp &rsp)
 {
 	TLOG_DEBUG("queue:" << queue << endl);
 
@@ -1741,7 +1744,8 @@ int StorageStateMachine::get_back(const string &queue, vector<char> &data)
 
 	rocksdb::Slice value = it->value();
 
-	data.assign(value.data(), value.data() + value.size());
+	rsp.index = *(int64_t*)(it->key().data());
+	rsp.data.assign(value.data(), value.data() + value.size());
 
 //	LOG_CONSOLE_DEBUG << string(data.data(), data.size()) << endl;
 
@@ -1750,7 +1754,7 @@ int StorageStateMachine::get_back(const string &queue, vector<char> &data)
 	return S_OK;
 }
 
-int StorageStateMachine::get_front(const string &queue, vector<char> &data)
+int StorageStateMachine::get_front(const string &queue, QueueRsp &rsp)
 {
 	TLOG_DEBUG("queue:" << queue << endl);
 
@@ -1774,10 +1778,46 @@ int StorageStateMachine::get_front(const string &queue, vector<char> &data)
 
 	rocksdb::Slice value = it->value();
 
-	data.assign(value.data(), value.data() + value.size());
+	rsp.index = *(int64_t*)(it->key().data());
+	rsp.data.assign(value.data(), value.data() + value.size());
 
 	TLOG_DEBUG("queue:" << queue << " succ, size:" << value.size() << endl);
 
+	return S_OK;
+}
+
+int StorageStateMachine::get(const string &queue, int64_t index, QueueRsp &rsp)
+{
+	auto handle = getQueue(queue);
+	if(!handle)
+	{
+		TLOG_ERROR("queue:" << queue << ", queue not exists!" << endl);
+		return S_QUEUE_NOT_EXIST;
+	}
+
+	rsp.index = index;
+
+	string value;
+
+	auto s = _db->Get(rocksdb::ReadOptions(), handle, rocksdb::Slice((const char *)&index, sizeof(index)), &value);
+	if (s.ok())
+	{
+//		LOG_CONSOLE_DEBUG << "index:" << index << ", buff size:" << value.size() << endl;
+		rsp.data.assign(value.c_str(), value.c_str() + value.size());
+		return S_OK;
+	}
+	else if(s.IsNotFound())
+	{
+		return S_NO_DATA;
+	}
+	else
+	{
+//		LOG_CONSOLE_DEBUG << "get error" << s.ToString() << endl;
+
+		TLOG_ERROR("Get: " << queue << ", index: " << index << ", error:" << s.ToString() << endl);
+
+		return S_ERROR;
+	}
 	return S_OK;
 }
 
@@ -1845,6 +1885,45 @@ void StorageStateMachine::onCreateQueue(TarsInputStream<> &is, int64_t appliedIn
 	}
 }
 
+void StorageStateMachine::StorageStateMachine::onDeleteData(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	string queue;
+	int64_t index;
+
+	is.read(queue, 1, false);
+	is.read(index, 2, false);
+
+	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", queue :" << queue << ", index:" << index << endl);
+
+	int ret;
+
+	auto handle = getQueue(queue);
+
+	if(!handle)
+	{
+		TLOG_ERROR("queue:" << queue << ", queue not exists" << endl);
+
+		ret = S_QUEUE_NOT_EXIST;
+	}
+	else
+	{
+		rocksdb::WriteBatch batch;
+
+		batch.Delete(handle, rocksdb::Slice((const char*)&index, sizeof(index)));
+
+		writeBatch(batch, appliedIndex);
+
+		ret = S_OK;
+	}
+
+	if(callback)
+	{
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
+
+		Storage::async_response_deleteData(callback->getCurrentPtr(), ret);
+	}
+}
+
 void StorageStateMachine::onPushBack(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
 {
 	QueueReq req;
@@ -1870,6 +1949,8 @@ void StorageStateMachine::onPushBack(TarsInputStream<> &is, int64_t appliedIndex
 		batch.Put(handle, rocksdb::Slice((const char*)&appliedIndex, sizeof(appliedIndex)), rocksdb::Slice(req.data.data(), req.data.size()));
 
 		writeBatch(batch, appliedIndex);
+
+		ret = S_OK;
 	}
 
 	if(callback)
@@ -1908,6 +1989,9 @@ void StorageStateMachine::onPushFront(TarsInputStream<> &is, int64_t appliedInde
 		batch.Put(handle, rocksdb::Slice((const char*)&minAppliedIndex, sizeof(minAppliedIndex)), rocksdb::Slice(req.data.data(), req.data.size()));
 
 		writeBatch(batch, appliedIndex);
+
+		ret = S_OK;
+
 	}
 
 	if(callback)
@@ -1934,7 +2018,9 @@ void StorageStateMachine::onPopBack(TarsInputStream<> &is, int64_t appliedIndex,
 
 	it->SeekToLast();
 
-	vector<char> data;
+	QueueRsp rsp;
+	rsp.index = appliedIndex;
+
 	if(!it->Valid())
 	{
 		TLOG_DEBUG("queue:" << queue << " no data" << endl);
@@ -1943,7 +2029,7 @@ void StorageStateMachine::onPopBack(TarsInputStream<> &is, int64_t appliedIndex,
 	else
 	{
 		rocksdb::Slice value = it->value();
-		data.assign(value.data(), value.data() + value.size());
+		rsp.data.assign(value.data(), value.data() + value.size());
 
 		rocksdb::WriteBatch batch;
 
@@ -1956,8 +2042,8 @@ void StorageStateMachine::onPopBack(TarsInputStream<> &is, int64_t appliedIndex,
 
 	if(callback)
 	{
-		TLOG_DEBUG("queue:" << queue << " succ, buff size:" << data.size() << endl);
-		Storage::async_response_pop_back(callback->getCurrentPtr(), ret, data);
+		TLOG_DEBUG("queue:" << queue << " succ, buff size:" << rsp.data.size() << endl);
+		Storage::async_response_pop_back(callback->getCurrentPtr(), ret, rsp);
 	}
 }
 
@@ -1977,7 +2063,8 @@ void StorageStateMachine::onPopFront(TarsInputStream<> &is, int64_t appliedIndex
 
 	it->SeekToFirst();
 
-	vector<char> data;
+	QueueRsp rsp;
+	rsp.index = appliedIndex;
 	if(!it->Valid())
 	{
 		TLOG_DEBUG("queue:" << queue << " no data" << endl);
@@ -1986,7 +2073,7 @@ void StorageStateMachine::onPopFront(TarsInputStream<> &is, int64_t appliedIndex
 	else
 	{
 		rocksdb::Slice value = it->value();
-		data.assign(value.data(), value.data() + value.size());
+		rsp.data.assign(value.data(), value.data() + value.size());
 
 		rocksdb::WriteBatch batch;
 
@@ -1999,8 +2086,8 @@ void StorageStateMachine::onPopFront(TarsInputStream<> &is, int64_t appliedIndex
 
 	if(callback)
 	{
-		TLOG_DEBUG("queue:" << queue << " succ, buff size:" << data.size() << endl);
-		Storage::async_response_pop_back(callback->getCurrentPtr(), ret, data);
+		TLOG_DEBUG("queue:" << queue << " succ, buff size:" << rsp.data.size() << endl);
+		Storage::async_response_pop_front(callback->getCurrentPtr(), ret, rsp);
 	}
 }
 

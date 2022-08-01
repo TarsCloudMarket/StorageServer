@@ -299,7 +299,7 @@ int StorageImp::push_front(const QueueReq &req, CurrentPtr current)
 	return 0;
 }
 
-int StorageImp::get_front(const Options &options, const string &queue, vector<char> &data, CurrentPtr current)
+int StorageImp::get_front(const Options &options, const string &queue, QueueRsp &rsp, CurrentPtr current)
 {
 	if(queue.empty())
 	{
@@ -310,10 +310,10 @@ int StorageImp::get_front(const Options &options, const string &queue, vector<ch
 		_raftNode->forwardToLeader(current);
 		return 0;
 	}
-	return _stateMachine->get_front(queue, data);
+	return _stateMachine->get_front(queue, rsp);
 }
 
-int StorageImp::get_back(const Options &options, const string &queue, vector<char> &data, CurrentPtr current)
+int StorageImp::get_back(const Options &options, const string &queue, QueueRsp &rsp, CurrentPtr current)
 {
 	if(queue.empty())
 	{
@@ -324,10 +324,10 @@ int StorageImp::get_back(const Options &options, const string &queue, vector<cha
 		_raftNode->forwardToLeader(current);
 		return 0;
 	}
-	return _stateMachine->get_back(queue, data);
+	return _stateMachine->get_back(queue, rsp);
 }
 
-int StorageImp::pop_front(const string &queue, vector<char> &data, CurrentPtr current)
+int StorageImp::pop_front(const string &queue, QueueRsp &rsp, CurrentPtr current)
 {
 	if(queue.empty())
 	{
@@ -346,7 +346,7 @@ int StorageImp::pop_front(const string &queue, vector<char> &data, CurrentPtr cu
 	return 0;
 }
 
-int StorageImp::pop_back(const string &queue, vector<char> &data, CurrentPtr current)
+int StorageImp::pop_back(const string &queue, QueueRsp &rsp, CurrentPtr current)
 {
 	if(queue.empty())
 	{
@@ -365,6 +365,39 @@ int StorageImp::pop_back(const string &queue, vector<char> &data, CurrentPtr cur
 	return 0;
 }
 
+int StorageImp::deleteData(const string &queue, tars::Int64 index, CurrentPtr current)
+{
+	if(queue.empty())
+	{
+		return S_QUEUE_NAME;
+	}
+	_raftNode->forwardOrReplicate(current, [&](){
+
+		TarsOutputStream<BufferWriterString> os;
+
+		os.write(StorageStateMachine::DEL_DATA_TYPE, 0);
+		os.write(queue, 1);
+		os.write(index, 2);
+
+		return  os.getByteBuffer();
+	});
+
+	return 0;
+}
+
+int StorageImp::getData(const Options &options, const string &queue, tars::Int64 index, QueueRsp &rsp, CurrentPtr current)
+{
+	if(queue.empty())
+	{
+		return S_QUEUE_NAME;
+	}
+	if(options.leader && !_raftNode->isLeader())
+	{
+		_raftNode->forwardToLeader(current);
+		return 0;
+	}
+	return _stateMachine->get(queue, index, rsp);
+}
 
 int StorageImp::clearQueue(const string &queue, CurrentPtr current)
 {

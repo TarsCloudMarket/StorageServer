@@ -1793,7 +1793,7 @@ TEST_F(StorageUnitTest, TestStorageJson)
 }
 
 
-TEST_F(StorageUnitTest, TestStorageCreateQueue)
+TEST_F(StorageUnitTest, TestQueueCreateQueue)
 {
 	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
 	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
@@ -1814,7 +1814,7 @@ TEST_F(StorageUnitTest, TestStorageCreateQueue)
 	raftTest->stopAll();
 }
 
-TEST_F(StorageUnitTest, TestStoragePushBack)
+TEST_F(StorageUnitTest, TestQueuePushBack)
 {
 	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
 	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
@@ -1830,6 +1830,8 @@ TEST_F(StorageUnitTest, TestStoragePushBack)
 	prx->createQueue("test");
 
 	Base::QueueReq req;
+	Base::QueueRsp rsp;
+
 	req.queue = "test";
 	req.data.assign(10, 'a');
 	ret = prx->push_back(req);
@@ -1838,17 +1840,15 @@ TEST_F(StorageUnitTest, TestStoragePushBack)
 
 	Base::Options options;
 	options.leader = true;
-	vector<char> data;
-	ret = prx->get_back(options, "test", data);
+	ret = prx->get_back(options, "test", rsp);
 
 	ASSERT_TRUE(ret == S_OK);
-	ASSERT_TRUE(data == req.data);
+	ASSERT_TRUE(rsp.data == req.data);
 
 	raftTest->stopAll();
 }
 
-
-TEST_F(StorageUnitTest, TestStoragePushFront)
+TEST_F(StorageUnitTest, TestQueuePushFront)
 {
 	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
 	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
@@ -1864,25 +1864,31 @@ TEST_F(StorageUnitTest, TestStoragePushFront)
 	prx->createQueue("test");
 
 	Base::QueueReq req;
+	Base::QueueRsp rsp;
+
+	Base::Options options;
+	options.leader = true;
+	ret = prx->get_front(options, "test", rsp);
+
+	ASSERT_TRUE(ret == S_NO_DATA);
+
 	req.queue = "test";
 	req.data.assign(10, 'a');
 	ret = prx->push_front(req);
 
 	ASSERT_TRUE(ret == S_OK);
 
-	Base::Options options;
 	options.leader = true;
-	vector<char> data;
-	ret = prx->get_front(options, "test", data);
+	ret = prx->get_front(options, "test", rsp);
 
 	ASSERT_TRUE(ret == S_OK);
-	ASSERT_TRUE(data == req.data);
+	ASSERT_TRUE(rsp.data == req.data);
 
 	raftTest->stopAll();
 }
 
 
-TEST_F(StorageUnitTest, TestStorageClearQueue)
+TEST_F(StorageUnitTest, TestQueueDeleteData)
 {
 	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
 	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
@@ -1898,6 +1904,57 @@ TEST_F(StorageUnitTest, TestStorageClearQueue)
 	prx->createQueue("test");
 
 	Base::QueueReq req;
+	Base::QueueRsp rsp;
+
+	Base::Options options;
+	options.leader = true;
+
+	req.queue = "test";
+	req.data.assign(10, 'a');
+	ret = prx->push_front(req);
+
+	ASSERT_TRUE(ret == S_OK);
+
+	options.leader = true;
+	ret = prx->get_front(options, "test", rsp);
+
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp.data == req.data);
+
+	LOG_CONSOLE_DEBUG << "get data:" << rsp.index << endl;
+	ret = prx->getData(options, "test", rsp.index, rsp);
+	LOG_CONSOLE_DEBUG << ret << endl;
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp.data == req.data);
+
+	LOG_CONSOLE_DEBUG << "delete data:" << rsp.index << endl;
+	ret = prx->deleteData("test", rsp.index);
+	ASSERT_TRUE(ret == S_OK);
+	ret = prx->get_front(options, "test", rsp);
+
+	ASSERT_TRUE(ret == S_NO_DATA);
+	raftTest->stopAll();
+}
+
+
+
+TEST_F(StorageUnitTest, TestQueueClearQueue)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	int ret;
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+	prx->createQueue("test");
+
+	Base::QueueReq req;
+	Base::QueueRsp rsp;
 	req.queue = "test";
 	req.data.assign(10, 'a');
 	ret = prx->push_front(req);
@@ -1909,8 +1966,7 @@ TEST_F(StorageUnitTest, TestStorageClearQueue)
 
 	Base::Options options;
 	options.leader = true;
-	vector<char> data;
-	ret = prx->get_front(options, "test", data);
+	ret = prx->get_front(options, "test", rsp);
 
 	ASSERT_TRUE(ret == S_NO_DATA);
 

@@ -117,25 +117,44 @@ public:
 	 * 队列从头部获取数据
 	 * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
 	 */
-	virtual int get_front(const Options &options, const string &queue, vector<char> &data, CurrentPtr current);
+	virtual int get_front(const Options &options, const string &queue, QueueRsp &rsp, CurrentPtr current);
 
 	/**
 	 * 队列从头部获取数据
 	 * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
 	 */
-	virtual int get_back(const Options &options, const string &queue, vector<char> &data, CurrentPtr current);
+	virtual int get_back(const Options &options, const string &queue, QueueRsp &rsp, CurrentPtr current);
 
 	/**
 	 * 队列从头部获取数据并删除
 	 * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
 	 */
-	virtual int pop_front(const string &queue, vector<char> &data, CurrentPtr current);
+	virtual int pop_front(const string &queue, QueueRsp &rsp, CurrentPtr current);
 
 	/**
 	 * 队列从尾部获取数据并删除
 	 * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
 	 */
-	virtual int pop_back(const string &queue, vector<char> &data, CurrentPtr current);
+	virtual int pop_back(const string &queue, QueueRsp &rsp, CurrentPtr current);
+
+	/**
+	 * 删除数据
+	 * @param queue
+	 * @param index
+	 * @param current
+	 * @return
+	 */
+	virtual int deleteData(const string &queue, tars::Int64 index, CurrentPtr current);
+
+	/**
+	 * 是否拥有数据
+	 * @param queue
+	 * @param index
+	 * @param has
+	 * @param current
+	 * @return
+	 */
+	virtual int getData(const Options &options, const string &queue, tars::Int64 index, QueueRsp &rsp, CurrentPtr current);
 
 	/**
 	 * 清空队列

@@ -117,6 +117,12 @@ struct QueueReq
     1 optional vector<byte> data;
 };
 
+struct QueueRsp
+{
+    0 optional long index;          //在队列中的索引
+    1 optional vector<byte> data;
+};
+
 interface Storage
 {
     /**
@@ -217,25 +223,37 @@ interface Storage
      * 队列从头部获取数据
      * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
      */
-    int get_front(Options opt, string queue, out vector<byte> data);
+    int get_front(Options opt, string queue, out QueueRsp rsp);
 
     /**
      * 队列从头部获取数据
      * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
      */
-    int get_back(Options opt, string queue, out vector<byte> data);
+    int get_back(Options opt, string queue, out QueueRsp rsp);
 
     /**
      * 队列从头部获取数据并删除之
      * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
      */
-    int pop_front(string queue, out vector<byte> data);
+    int pop_front(string queue, out QueueRsp rsp);
 
     /**
      * 队列从尾部获取数据并删除之
      * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
      */
-    int pop_back(string queue, out vector<byte> data);
+    int pop_back(string queue, out QueueRsp rsp);
+
+    /**
+     * 从队列中删除数据
+     * @return int, S_OK: 成功, <0: 失败
+     */
+    int deleteData(string queue, long index);
+
+    /**
+     * 从队列获取指定索引的数据
+     * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
+     */
+    int getData(Options opt, string queue, long index, out QueueRsp rsp);
 
     /**
      * 清空队列

@@ -40,6 +40,7 @@ public:
 	const static string PUSH_FRONT_TYPE;
 	const static string POP_BACK_DEL_TYPE;
 	const static string POP_FRONT_DEL_TYPE;
+	const static string DEL_DATA_TYPE;
 	const static string CLEAR_QUEUE_TYPE;
 
 	/**
@@ -163,7 +164,7 @@ public:
 	 * @param data
 	 * @return
 	 */
-	int get_back(const string &queue, vector<char> &data);
+	int get_back(const string &queue, QueueRsp &rsp);
 
 	/**
 	 * 获取队列头部数据
@@ -171,7 +172,16 @@ public:
 	 * @param data
 	 * @return
 	 */
-	int get_front(const string &queue, vector<char> &data);
+	int get_front(const string &queue, QueueRsp &rsp);
+
+	/**
+	 * 队列是否有数据
+	 * @param queue
+	 * @param index
+	 * @param has
+	 * @return
+	 */
+	int get(const string &queue, int64_t index, QueueRsp &rsp);
 
 	/**
 	 * 关闭数据库
@@ -243,6 +253,7 @@ protected:
 
 	string queueName(const string &table) { return "q-" + table; }
 	void onCreateQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onDeleteData(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onPushBack(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onPushFront(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onPopBack(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
