@@ -360,6 +360,20 @@ int StorageImp::getQueueData(const Options &options, const vector<QueueIndex> &r
 	return _stateMachine->getQueueData(req, rsp);
 }
 
+int StorageImp::getQueueSize(const Options &options, const string &queue, tars::Int64  &size, CurrentPtr current)
+{
+	if (queue.empty())
+	{
+		return S_QUEUE_NAME;
+	}
+	if(options.leader && !_raftNode->isLeader())
+	{
+		_raftNode->forwardToLeader(current);
+		return 0;
+	}
+	return _stateMachine->getQueueSize(queue, size);
+}
+
 int StorageImp::doBatch(const BatchDataReq &req, BatchDataRsp &rsp, CurrentPtr current)
 {
 	for(auto &d : req.sData)

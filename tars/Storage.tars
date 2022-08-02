@@ -99,15 +99,19 @@ struct StorageJson
     1 optional vector<StorageUpdate> supdate; //所有更新都成功才会更新记录, 否则返回失败
 };
 
-//分页查询, 必须指定mkey
-//forword: true, 则表示从小到大, 数据[mkey-ukey, ...), 开始往后遍历limit个, 如果ukey为空, 则表示mkey-头开始遍历
-//forword: false, 则表示从大到小, 数据(..., mkey-ukey], 开始往前遍历limit个
+//分页查询
+//注意: over 表示否是可以跨mkey, 如果over==false, 表示不允许跨mkey, skey中的mkey必须填写! 遍历的数据都是指定mkey的数据
+//- forword: true, 则表示从小到大, 数据[mkey-ukey, ...), 开始往后遍历limit个, 如果ukey为空, 则表示mkey-头开始遍历
+//- forword: false, 则表示从大到小, 数据(..., mkey-ukey], 开始往前遍历limit个
+//如果over==true, 表示允许跨mkey, skey中的mkey可以不填写, 遍历的数据按照mkey-ukey遍历即可
+
 struct PageReq
 {
     0 optional StorageKey skey;
     1 optional int limit = 10;
     2 optional bool forward = true;
     3 optional bool include = true;
+    4 optional bool over    = false;
 };
 
 struct QueueData

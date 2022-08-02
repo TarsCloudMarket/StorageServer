@@ -84,6 +84,43 @@ public:
 		uint32_t bukeyLen = ntohl(*(uint32_t*)(b.data() + (bmkeyLen + 1)+ sizeof(uint32_t) + 1));
 		assert(bmkeyLen + bukeyLen + 11 == b.size());
 
+		//中间的分隔符
+		unsigned char sepa = a[sizeof(uint32_t) + amkeyLen + 1];
+		unsigned char sepb = b[sizeof(uint32_t) + bmkeyLen + 1];
+
+		if(amkeyLen == bmkeyLen && bmkeyLen == 0)
+		{
+			//分隔符相同, 认为是相等的
+			if(sepa == sepb)
+			{
+				return 0;
+			}
+
+			return sepa < sepb ? -1 : 1;
+		}
+
+		if(amkeyLen == 0)
+		{
+//			LOG_CONSOLE_DEBUG << (char)sepa << " " << (char)sepb << endl;
+			if(sepa == sepb)
+			{
+				return 1;
+			}
+
+			return sepa < sepb ? -1 : 1;
+		}
+
+		if(bmkeyLen == 0)
+		{
+//			LOG_CONSOLE_DEBUG << (char)sepa << " " << (char)sepb << endl;
+			if(sepa == sepb)
+			{
+				return -1;
+			}
+
+			return sepa < sepb ? -1 : 1;
+		}
+
 		int flag = TC_Port::strcmp(a.data() + sizeof(uint32_t), b.data() + sizeof(uint32_t));
 
 		if(flag != 0)
@@ -91,9 +128,9 @@ public:
 			return flag;
 		}
 
-		if(a[sizeof(uint32_t) + amkeyLen + 1] != b[sizeof(uint32_t) + bmkeyLen + 1])
+		if(sepa != sepb)
 		{
-			return (unsigned char)(a[sizeof(uint32_t) + amkeyLen + 1]) < (unsigned char)(b[sizeof(uint32_t) + bmkeyLen + 1]) ? -1 : 1;
+			return sepa < sepb ? -1 : 1;
 		}
 
 		return TC_Port::strcmp(a.data() + sizeof(uint32_t) + amkeyLen + 2 + sizeof(uint32_t) , b.data() + sizeof(uint32_t) + bmkeyLen + 2 + sizeof(uint32_t)) ;
@@ -183,6 +220,54 @@ StorageStateMachine::~StorageStateMachine()
 void StorageStateMachine::terminate()
 {
 	_server->terminate();
+}
+
+shared_ptr<StorageStateMachine::AutoSlice> StorageStateMachine::tokeyLower()
+{
+	uint32_t mkeyLen = 0;
+	uint32_t ukeyLen = 0;
+
+	size_t length = sizeof(mkeyLen) + 1 + 1 + sizeof(ukeyLen) + 1;
+	const char *buff = new char[length];
+	size_t pos = 0;
+	memcpy((void*)buff, (const char*)&mkeyLen, sizeof(mkeyLen));
+	pos += sizeof(mkeyLen);
+	pos += 1;
+	memcpy((void*)(buff + pos), ",", 1);
+	pos += 1;
+
+	memcpy((void*)(buff + pos), (const char*)&ukeyLen, sizeof(ukeyLen));
+	pos += sizeof(ukeyLen);
+	memcpy((void*)(buff + pos), "\0", 1);
+	pos += 1;
+
+	assert(pos == length);
+
+	return std::make_shared<AutoSlice>(buff, length);
+}
+
+shared_ptr<StorageStateMachine::AutoSlice> StorageStateMachine::tokeyUpper()
+{
+	uint32_t mkeyLen = 0;
+	uint32_t ukeyLen = 0;
+
+	size_t length = sizeof(mkeyLen) + 1 + 1 + sizeof(ukeyLen) + 1;
+	const char *buff = new char[length];
+	size_t pos = 0;
+	memcpy((void*)buff, (const char*)&mkeyLen, sizeof(mkeyLen));
+	pos += sizeof(mkeyLen);
+	pos += 1;
+	memcpy((void*)(buff + pos), ".", 1);
+	pos += 1;
+
+	memcpy((void*)(buff + pos), (const char*)&ukeyLen, sizeof(ukeyLen));
+	pos += sizeof(ukeyLen);
+	memcpy((void*)(buff + pos), "\0", 1);
+	pos += 1;
+
+	assert(pos == length);
+
+	return std::make_shared<AutoSlice>(buff, length);
 }
 
 shared_ptr<StorageStateMachine::AutoSlice> StorageStateMachine::tokeyUpper(const string &mkey)
@@ -745,7 +830,23 @@ int StorageStateMachine::trans(const PageReq &req, vector<StorageData> &data)
 
 	if(req.forward)
 	{
-		auto k = tokey(req.skey);
+		shared_ptr<AutoSlice> k;
+
+		if(!req.over)
+		{
+			k = tokey(req.skey);
+		}
+		else
+		{
+			if(!req.skey.mkey.empty())
+			{
+				k = tokey(req.skey);
+			}
+			else
+			{
+				k = tokeyLower();
+			}
+		}
 
 		rocksdb::Slice key(k->data, k->length);
 
@@ -756,13 +857,13 @@ int StorageStateMachine::trans(const PageReq &req, vector<StorageData> &data)
 			StorageData d;
 			d.skey = keyto(it->key().data(), it->key().size());
 
-			if(d.skey.mkey != req.skey.mkey)
+			if(d.skey.mkey != req.skey.mkey && !req.over)
 			{
 				//跨mkey了
 				break;
 			}
 
-			if(!req.include && req.skey.ukey == d.skey.ukey)
+			if(!req.include && req.skey.mkey == d.skey.mkey && req.skey.ukey == d.skey.ukey)
 			{
 				//不包含检索的第一个数据
 				it->Next();
@@ -788,13 +889,34 @@ int StorageStateMachine::trans(const PageReq &req, vector<StorageData> &data)
 	{
 		shared_ptr<AutoSlice> k;
 
-		if(!req.skey.ukey.empty())
+		if(!req.over)
 		{
-			k = tokey(req.skey);
+			if (!req.skey.ukey.empty())
+			{
+				k = tokey(req.skey);
+			}
+			else
+			{
+				k = tokeyUpper(req.skey.mkey);
+			}
 		}
 		else
 		{
-			k = tokeyUpper(req.skey.mkey);
+			if (!req.skey.mkey.empty())
+			{
+				if (!req.skey.ukey.empty())
+				{
+					k = tokey(req.skey);
+				}
+				else
+				{
+					k = tokeyUpper(req.skey.mkey);
+				}
+			}
+			else
+			{
+				k = tokeyUpper();
+			}
 		}
 
 		//从大到小
@@ -805,13 +927,13 @@ int StorageStateMachine::trans(const PageReq &req, vector<StorageData> &data)
 			StorageData d;
 			d.skey = keyto(it->key().data(), it->key().size());
 
-			if(d.skey.mkey != req.skey.mkey)
+			if(d.skey.mkey != req.skey.mkey && !req.over)
 			{
 				//跨mkey了
 				break;
 			}
 
-			if(!req.include && req.skey.ukey == d.skey.ukey)
+			if(!req.include && req.skey.mkey == d.skey.mkey && req.skey.ukey == d.skey.ukey)
 			{
 				//不包含检索的第一个数据
 				it->Prev();
@@ -1893,6 +2015,17 @@ int StorageStateMachine::get_queue(const QueuePopReq &req, vector<QueueRsp> &rsp
 	return S_OK;
 }
 
+int StorageStateMachine::getQueueSize(const string &queue, tars::Int64 &size)
+{
+	auto handle = getQueue(queue);
+	if (!handle)
+	{
+		TLOG_ERROR("queue:" << queue << ", queue not exists!" << endl);
+		return S_QUEUE_NOT_EXIST;
+	}
+
+	return S_OK;
+}
 
 int StorageStateMachine::getQueueData(const vector<QueueIndex> &req, vector<QueueRsp> &rsp)
 {
@@ -2084,8 +2217,6 @@ STORAGE_RT StorageStateMachine::queueBatch(rocksdb::WriteBatch &batch, const vec
 			else
 			{
 				auto it = frontIndex.find(r.queue);
-
-				int64_t index = 0;
 
 				if(it == frontIndex.end())
 				{

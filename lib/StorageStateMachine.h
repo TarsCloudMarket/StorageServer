@@ -171,6 +171,14 @@ public:
 	int getQueueData(const vector<QueueIndex> &req, vector<QueueRsp> &rsp);
 
 	/**
+	 * 队列大小
+	 * @param queue
+	 * @param size
+	 * @return
+	 */
+	int getQueueSize(const string &queue, tars::Int64 &size);
+
+	/**
 	 * 关闭数据库
 	 */
 	void close();
@@ -221,6 +229,8 @@ protected:
 
 	shared_ptr<AutoSlice> tokey(const StorageKey &key);
 	shared_ptr<AutoSlice> tokeyUpper(const string &mkey);
+	shared_ptr<AutoSlice> tokeyUpper();
+	shared_ptr<AutoSlice> tokeyLower();
 	StorageKey keyto(const char *key, size_t length);
 
 	rocksdb::ColumnFamilyHandle* getTable(const string &table);
@@ -244,6 +254,7 @@ protected:
 	void onDeleteQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onPushQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onPopQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+
 
 	void onBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	STORAGE_RT setBatch(rocksdb::WriteBatch &batch, const vector<StorageData> &data, map<StorageKey, int> &rsp);

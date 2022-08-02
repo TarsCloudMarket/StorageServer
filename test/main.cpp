@@ -882,6 +882,88 @@ TEST_F(StorageUnitTest, TestStorageTransForward)
 			ASSERT_TRUE(data[data.size()-1].skey.ukey == "00099");
 		}
 
+		{
+			PageReq req;
+			req.skey.table = "test";
+			req.skey.mkey = "";
+			req.skey.ukey = "";
+			req.limit = -1;
+			req.over = true;
+
+			vector<StorageData> data;
+
+			ret = prx->trans(options, req, data);
+			ASSERT_TRUE(ret == 0);
+
+			LOG_CONSOLE_DEBUG << data.size() << endl;
+			ASSERT_TRUE(data.size() == 300);
+			ASSERT_TRUE(data[0].skey.mkey == "aaa");
+			ASSERT_TRUE(data[0].skey.ukey == "00000");
+			ASSERT_TRUE(data[data.size()-1].skey.mkey == "def");
+			ASSERT_TRUE(data[data.size()-1].skey.ukey == "00099");
+		}
+
+		{
+			PageReq req;
+			req.skey.table = "test";
+			req.skey.mkey = "";
+			req.skey.ukey = "";
+			req.limit = 102;
+			req.over = true;
+
+			vector<StorageData> data;
+
+			ret = prx->trans(options, req, data);
+			ASSERT_TRUE(ret == 0);
+
+			ASSERT_TRUE(data.size() == req.limit);
+			ASSERT_TRUE(data[0].skey.mkey == "aaa");
+			ASSERT_TRUE(data[0].skey.ukey == "00000");
+			ASSERT_TRUE(data[data.size()-1].skey.mkey == "abc");
+			ASSERT_TRUE(data[data.size()-1].skey.ukey == "00001");
+
+			{
+				PageReq req;
+				req.skey.table = "test";
+				req.skey.mkey = data[data.size()-1].skey.mkey;
+				req.skey.ukey = data[data.size()-1].skey.ukey;
+				req.include = false;
+				req.limit = 102;
+				req.over = true;
+
+				vector<StorageData> data;
+
+				ret = prx->trans(options, req, data);
+				ASSERT_TRUE(ret == 0);
+
+				ASSERT_TRUE(data.size() == req.limit);
+				ASSERT_TRUE(data[0].skey.mkey == "abc");
+				ASSERT_TRUE(data[0].skey.ukey == "00002");
+				ASSERT_TRUE(data[data.size()-1].skey.mkey == "def");
+				ASSERT_TRUE(data[data.size()-1].skey.ukey == "00003");
+			}
+
+			{
+				PageReq req;
+				req.skey.table = "test";
+				req.skey.mkey = data[data.size()-1].skey.mkey;
+				req.skey.ukey = data[data.size()-1].skey.ukey;
+				req.include = true;
+				req.limit = 102;
+				req.over = true;
+
+				vector<StorageData> data;
+
+				ret = prx->trans(options, req, data);
+				ASSERT_TRUE(ret == 0);
+
+				ASSERT_TRUE(data.size() == req.limit);
+				ASSERT_TRUE(data[0].skey.mkey == "abc");
+				ASSERT_TRUE(data[0].skey.ukey == "00001");
+				ASSERT_TRUE(data[data.size()-1].skey.mkey == "def");
+				ASSERT_TRUE(data[data.size()-1].skey.ukey == "00002");
+			}
+		}
 	}
 
 	raftTest->stopAll();
@@ -960,7 +1042,6 @@ TEST_F(StorageUnitTest, TestStorageTransBackward)
 
 			ret = prx->trans(options, req, data);
 			ASSERT_TRUE(ret == 0);
-			LOG_CONSOLE_DEBUG << data.size() << endl;
 
 			ASSERT_TRUE(data.size() == 10);
 			ASSERT_TRUE(data[0].skey.mkey == "abc");
@@ -982,7 +1063,6 @@ TEST_F(StorageUnitTest, TestStorageTransBackward)
 			ret = prx->trans(options, req, data);
 			ASSERT_TRUE(ret == 0);
 
-			LOG_CONSOLE_DEBUG << data.size() << endl;
 			ASSERT_TRUE(data.size() == 10);
 			ASSERT_TRUE(data[0].skey.mkey == "abc");
 			ASSERT_TRUE(data[0].skey.ukey == "00099");
@@ -1030,6 +1110,93 @@ TEST_F(StorageUnitTest, TestStorageTransBackward)
 			ASSERT_TRUE(data[data.size()-1].skey.ukey == "00000");
 		}
 
+		{
+			PageReq req;
+			req.skey.table = "test";
+			req.skey.mkey = "";
+			req.skey.ukey = "";
+			req.limit = -1;
+			req.forward = false;
+			req.over = true;
+
+			vector<StorageData> data;
+
+			ret = prx->trans(options, req, data);
+			ASSERT_TRUE(ret == 0);
+
+			LOG_CONSOLE_DEBUG << data.size() << endl;
+			ASSERT_TRUE(data.size() == 300);
+			ASSERT_TRUE(data[0].skey.mkey == "def");
+			ASSERT_TRUE(data[0].skey.ukey == "00099");
+			ASSERT_TRUE(data[data.size()-1].skey.mkey == "aaa");
+			ASSERT_TRUE(data[data.size()-1].skey.ukey == "00000");
+
+		}
+
+		{
+			PageReq req;
+			req.skey.table = "test";
+			req.skey.mkey = "";
+			req.skey.ukey = "";
+			req.limit = 102;
+			req.forward = false;
+			req.over = true;
+
+			vector<StorageData> data;
+
+			ret = prx->trans(options, req, data);
+			ASSERT_TRUE(ret == 0);
+
+			ASSERT_TRUE(data.size() == req.limit);
+			ASSERT_TRUE(data[0].skey.mkey == "def");
+			ASSERT_TRUE(data[0].skey.ukey == "00099");
+			ASSERT_TRUE(data[data.size()-1].skey.mkey == "abc");
+			ASSERT_TRUE(data[data.size()-1].skey.ukey == "00098");
+
+			{
+				PageReq req;
+				req.skey.table = "test";
+				req.skey.mkey = data[data.size()-1].skey.mkey;
+				req.skey.ukey = data[data.size()-1].skey.ukey;
+				req.limit = 102;
+				req.include = false;
+				req.forward = false;
+				req.over = true;
+
+				vector<StorageData> data;
+
+				ret = prx->trans(options, req, data);
+				ASSERT_TRUE(ret == 0);
+
+				ASSERT_TRUE(data.size() == req.limit);
+				ASSERT_TRUE(data[0].skey.mkey == "abc");
+				ASSERT_TRUE(data[0].skey.ukey == "00097");
+				ASSERT_TRUE(data[data.size()-1].skey.mkey == "aaa");
+				ASSERT_TRUE(data[data.size()-1].skey.ukey == "00096");
+			}
+
+			{
+				PageReq req;
+				req.skey.table = "test";
+				req.skey.mkey = data[data.size()-1].skey.mkey;
+				req.skey.ukey = data[data.size()-1].skey.ukey;
+				req.limit = 102;
+				req.include = true;
+				req.forward = false;
+				req.over = true;
+
+				vector<StorageData> data;
+
+				ret = prx->trans(options, req, data);
+				ASSERT_TRUE(ret == 0);
+
+				ASSERT_TRUE(data.size() == req.limit);
+				ASSERT_TRUE(data[0].skey.mkey == "abc");
+				ASSERT_TRUE(data[0].skey.ukey == "00098");
+				ASSERT_TRUE(data[data.size()-1].skey.mkey == "aaa");
+				ASSERT_TRUE(data[data.size()-1].skey.ukey == "00097");
+			}
+		}
 	}
 
 	raftTest->stopAll();
@@ -1983,6 +2150,8 @@ TEST_F(StorageUnitTest, TestQueuePopFront)
 
 	rsp.clear();
 	ret = prx->pop_queue(popReq, rsp);
+
+	LOG_CONSOLE_DEBUG << rsp.size() << endl;
 
 	ASSERT_TRUE(ret == S_OK);
 	ASSERT_TRUE(rsp.size() == popReq.count);
