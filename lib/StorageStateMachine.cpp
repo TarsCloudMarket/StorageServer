@@ -1918,7 +1918,7 @@ int StorageStateMachine::getQueueData(const vector<QueueIndex> &req, vector<Queu
 		}
 		else
 		{
-			TLOG_ERROR("Get: " << r.queue << ", index: " << index << ", error:" << s.ToString() << endl);
+			TLOG_ERROR("Get: " << r.queue << ", index: " << r.index << ", error:" << s.ToString() << endl);
 
 			return S_ERROR;
 		}
