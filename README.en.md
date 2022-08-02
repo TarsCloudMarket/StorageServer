@@ -49,6 +49,7 @@ The deployment focuses on:
 
 ## Instructions for use
 
+### table mode
 - Using C++, the underlying data storage uses rockesdb to realize the storage mode of mkey + ukey + data
 - Mkey is the resident key, ukey is the joint key, and data is the actual data
 - The underlying data is stored in rocksdb
@@ -64,6 +65,10 @@ The deployment focuses on:
 - When mkey is known, the data can be traversed according to ukey 
 - If the data format is JSON format, a field in update JSON is supported (only number/string/bool type is supported)
 
+### queue mode
+- Queue mode, relatively simple interface, can push and pop
+- Specify to delete a piece of data according to the index of the data in the queue
+- If the data is put into the queue, you can also specify the timeout time. Once the timeout occurs, the data cannot be obtained
 
 ## Performance description
 

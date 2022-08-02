@@ -47,6 +47,9 @@
 
 - 使用c++, 底层数据存储用rockesdb, 实现mkey+ukey+data的存储方式
 - 拿到tars协议文件, 通过StoragePrx即可完成服务的调用
+- 支持两种存储方式, 一种是map类table存储格式, 一类是队列模式
+
+### table模式
 - mkey是主key, ukey是子key, data是实际数据, 使用vector<byte>, 因此可以存放二进制数据
 - 支持多张表, 使用时需要调用createTable来创建表, createTable可以重复调用, 比如在服务每次启动时调用
 - 注意mkey/ukey只能使用字符串(不能用二进制数据!!!), 且在存储是按照字符串从小到大排序的, 因此遍历时可以按照顺序遍历
@@ -63,6 +66,12 @@
 - 可以在tarsweb上, 发送命令查看和修改表的数据, 方便调试
  >- storage.get table mkey ukey
  >- storage.set table mkey ukey value
+ >- storage.del table mkey ukey value
+
+### queue模式
+- 队列模式, 接口相对简单, 可以push和pop
+- 根据数据在队列中的索引, 指定删除某一条数据
+- 数据放入队列中, 也可以指定超时时间, 一旦超时则获取不到该条数据了
 
 ## 性能说明
 

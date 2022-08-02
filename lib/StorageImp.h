@@ -102,40 +102,22 @@ public:
 	virtual int createQueue(const string &queue, CurrentPtr current);
 
 	/**
-	 * 队列最后放入数据
+	 * 队列放入数据
 	 * @return int, S_OK: 成功, <0: 失败
 	 */
-	virtual int push_back(const QueueReq &req, CurrentPtr current);
+	virtual int push_queue(const vector<QueuePushReq> &req, CurrentPtr current);
 
 	/**
-	 * 队列最前面放入数据
-	 * @return int, S_OK: 成功, <0: 失败
-	 */
-	virtual int push_front(const QueueReq &req, CurrentPtr current);
-
-	/**
-	 * 队列从头部获取数据
+	 * 队列从获取数据
 	 * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
 	 */
-	virtual int get_front(const Options &options, const string &queue, QueueRsp &rsp, CurrentPtr current);
+	virtual int get_queue(const Options &options, const QueuePopReq &req, vector<QueueRsp> &rsp, CurrentPtr current);
 
 	/**
-	 * 队列从头部获取数据
+	 * 队列从获取数据并删除
 	 * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
 	 */
-	virtual int get_back(const Options &options, const string &queue, QueueRsp &rsp, CurrentPtr current);
-
-	/**
-	 * 队列从头部获取数据并删除
-	 * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
-	 */
-	virtual int pop_front(const string &queue, QueueRsp &rsp, CurrentPtr current);
-
-	/**
-	 * 队列从尾部获取数据并删除
-	 * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
-	 */
-	virtual int pop_back(const string &queue, QueueRsp &rsp, CurrentPtr current);
+	virtual int pop_queue(const QueuePopReq &req, vector<QueueRsp> &rsp, CurrentPtr current);
 
 	/**
 	 * 删除数据
@@ -144,7 +126,7 @@ public:
 	 * @param current
 	 * @return
 	 */
-	virtual int deleteData(const string &queue, tars::Int64 index, CurrentPtr current);
+	virtual int deleteQueueData(const vector<QueueIndex> &req, CurrentPtr current);
 
 	/**
 	 * 是否拥有数据
@@ -154,13 +136,15 @@ public:
 	 * @param current
 	 * @return
 	 */
-	virtual int getData(const Options &options, const string &queue, tars::Int64 index, QueueRsp &rsp, CurrentPtr current);
+	virtual int getQueueData(const Options &options, const vector<QueueIndex> &req, vector<QueueRsp> &rsp, CurrentPtr current);
 
 	/**
-	 * 清空队列
-	 * @return int, S_OK: 成功, <0: 失败
+	 * 批量处理写
+	 * @param data
+	 * @return
 	 */
-	virtual int clearQueue(const string &queue, CurrentPtr current);
+	virtual int doBatch(const BatchDataReq &req, BatchDataRsp &rsp, CurrentPtr current);
+
 protected:
 
 	shared_ptr<RaftNode>    _raftNode;

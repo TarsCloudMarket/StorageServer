@@ -110,21 +110,58 @@ struct PageReq
     3 optional bool include = true;
 };
 
-//队列请求
-struct QueueReq
+struct QueueData
+{
+    0 optional int expireTime = 0;  //淘汰时间(相对时间, 秒), ==0 忽略淘汰(不淘汰)
+    5 optional vector<byte> data;   //实际数据
+};
+
+//队列插入请求
+struct QueuePushReq
 {
     0 optional string queue;
-    1 optional vector<byte> data;
+    1 optional bool   back = true;          //true: back, false: front
+    2 optional int expireTime = 0;          //数据在队列中的超时时间(秒), ==0, 则不超时
+    5 optional vector<byte> data;           //数据
+};
+
+//获取队列数据响应
+struct QueuePopReq
+{
+    0 optional string queue;
+    1 optional bool   back = true;          //true: back, false: front
+    2 optional int    count = 1;            //pop的数量
 };
 
 struct QueueRsp
 {
-    0 optional long index;          //在队列中的索引
-    1 optional vector<byte> data;
+    0 optional string queue;
+    1 optional long index;                 //在队列中的主索引, 数据在队列中按照index来排序的
+    3 optional vector<byte> data;
+};
+
+struct QueueIndex
+{
+    0 optional string queue;
+    1 optional long index;                 //在队列中的主索引
+};
+
+//批量写各种数据, 一次性成功,要么失败
+struct BatchDataReq
+{
+    0 optional vector<StorageData>  sData;
+    1 optional vector<StorageJson>  uData;
+    2 optional vector<QueuePushReq> qData;
+};
+
+struct BatchDataRsp
+{
+    0 optional map<StorageKey, int> sRsp;
 };
 
 interface Storage
 {
+    ///////////////////////////////////////////////////////////////////////////////////////////////
     /**
      * 创建表
      * @return int, S_OK: 成功, <0: 失败
@@ -183,7 +220,7 @@ interface Storage
     int hasBatch(Options opt, vector<StorageKey> data, out map<StorageKey, int> rsp);
 
     /**
-     * 批量更新数据, 所有记录成功才算成功, 否则不会更新数据
+     * 批量更新数据(一个字段只能有一条更新数据), 所有记录成功才算成功, 否则不会更新数据
      * @return int, S_OK: 成功, <0: 失败
      */
     int updateBatch(vector<StorageJson> data);
@@ -208,58 +245,42 @@ interface Storage
     int createQueue(string queue);
 
     /**
-     * 队列最后放入数据
+     * 放入数据到队列
      * @return int, S_OK: 成功, <0: 失败
      */
-    int push_back(QueueReq req);
+    int push_queue(vector<QueuePushReq> req);
 
     /**
-     * 队列最前面放入数据
-     * @return int, S_OK: 成功, <0: 失败
-     */
-    int push_front(QueueReq req);
-
-    /**
-     * 队列从头部获取数据
+     * 队列获取数据
      * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
      */
-    int get_front(Options opt, string queue, out QueueRsp rsp);
-
-    /**
-     * 队列从头部获取数据
-     * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
-     */
-    int get_back(Options opt, string queue, out QueueRsp rsp);
+    int get_queue(Options opt, QueuePopReq req, out vector<QueueRsp> rsp);
 
     /**
      * 队列从头部获取数据并删除之
      * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
      */
-    int pop_front(string queue, out QueueRsp rsp);
-
-    /**
-     * 队列从尾部获取数据并删除之
-     * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
-     */
-    int pop_back(string queue, out QueueRsp rsp);
+    int pop_queue(QueuePopReq req, out vector<QueueRsp> rsp);
 
     /**
      * 从队列中删除数据
      * @return int, S_OK: 成功, <0: 失败
      */
-    int deleteData(string queue, long index);
+    int deleteQueueData(vector<QueueIndex> req);
 
     /**
      * 从队列获取指定索引的数据
-     * @return int, S_OK: 成功, <0: 失败 or S_NO_DATA
-     */
-    int getData(Options opt, string queue, long index, out QueueRsp rsp);
-
-    /**
-     * 清空队列
      * @return int, S_OK: 成功, <0: 失败
      */
-    int clearQueue(string queue);
+    int getQueueData(Options opt, vector<QueueIndex> req, out vector<QueueRsp> rsp);
+
+    ///////////////////////////////////////////////////////////////////////////////
+
+    /**
+     * 批量一次性写数据, 要么成功, 要么失败(对于key/value模式因为时间戳, 版本不一致等原因可能导致个别数据写不成功, 因此rsp里面返回了每条数据的写的结果)
+     * @return int, S_OK: 成功, <0: 失败
+     */
+    int doBatch(BatchDataReq req, out BatchDataRsp rsp);
 };
 
 }; 

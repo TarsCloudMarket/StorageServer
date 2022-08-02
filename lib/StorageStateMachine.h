@@ -23,6 +23,7 @@ class WriteBatch;
 using namespace Base;
 
 class ApplyContext;
+class StorageServer;
 
 class StorageStateMachine : public StateMachine
 {
@@ -35,19 +36,18 @@ public:
 	const static string SET_JSON_TYPE  ;
 	const static string BSET_JSON_TYPE;
 
-	const static string QUEUE_TYPE;
-	const static string PUSH_BACK_TYPE;
-	const static string PUSH_FRONT_TYPE;
-	const static string POP_BACK_DEL_TYPE;
-	const static string POP_FRONT_DEL_TYPE;
-	const static string DEL_DATA_TYPE;
-	const static string CLEAR_QUEUE_TYPE;
+	const static string CREATE_QUEUE_TYPE;
+	const static string PUSH_QUEUE_TYPE;
+	const static string POP_QUEUE_TYPE;
+	const static string DEL_QUEUE_TYPE;
+
+	const static string BATCH_DATA;
 
 	/**
 	 * 构造
 	 * @param dataPath
 	 */
-	StorageStateMachine(const string &dataPath);
+	StorageStateMachine(const string &dataPath, StorageServer *server);
 
 	/**
 	 * 析构
@@ -160,28 +160,15 @@ public:
 
 	/**
 	 * 获取队列尾部数据
-	 * @param queue
-	 * @param data
 	 * @return
 	 */
-	int get_back(const string &queue, QueueRsp &rsp);
-
-	/**
-	 * 获取队列头部数据
-	 * @param queue
-	 * @param data
-	 * @return
-	 */
-	int get_front(const string &queue, QueueRsp &rsp);
+	int get_queue(const QueuePopReq &req, vector<QueueRsp> &rsp);
 
 	/**
 	 * 队列是否有数据
-	 * @param queue
-	 * @param index
-	 * @param has
 	 * @return
 	 */
-	int get(const string &queue, int64_t index, QueueRsp &rsp);
+	int getQueueData(const vector<QueueIndex> &req, vector<QueueRsp> &rsp);
 
 	/**
 	 * 关闭数据库
@@ -230,7 +217,7 @@ protected:
 
 	void writeBatch(rocksdb::WriteBatch &batch, int64_t appliedIndex);
 
-	int onUpdateJson(rocksdb::WriteBatch &batch, const StorageJson &update);
+	int onUpdateJson(rocksdb::WriteBatch &batch, const StorageJson &update, map<rocksdb::ColumnFamilyHandle*, map<string, pair<StorageValue, JsonValueObjPtr>>> &result);
 
 	shared_ptr<AutoSlice> tokey(const StorageKey &key);
 	shared_ptr<AutoSlice> tokeyUpper(const string &mkey);
@@ -252,13 +239,18 @@ protected:
 	STORAGE_RT updateArrayAddNoRepeat(JsonValuePtr &value, const Base::StorageUpdate &update);
 
 	string queueName(const string &table) { return "q-" + table; }
+	void get_data(const string &queue, int64_t index, const char *buff, size_t length, vector<QueueRsp> &rsp);
 	void onCreateQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
-	void onDeleteData(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
-	void onPushBack(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
-	void onPushFront(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
-	void onPopBack(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
-	void onPopFront(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
-	void onClearQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onDeleteQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onPushQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onPopQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+
+	void onBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	STORAGE_RT setBatch(rocksdb::WriteBatch &batch, const vector<StorageData> &data, map<StorageKey, int> &rsp);
+	STORAGE_RT updateBatch(rocksdb::WriteBatch &batch, const vector<StorageJson> &data);
+	STORAGE_RT queueBatch(rocksdb::WriteBatch &batch, const vector<QueuePushReq> &data);
+
+	void terminate();
 
 protected:
 	string          _raftDataDir;
@@ -271,6 +263,8 @@ protected:
 
 	//字段更新机制
 	map<tars::eJsonType, map<StorageOperator, field_update_type>>	_updateApply;
+
+	StorageServer *_server;
 };
 
 

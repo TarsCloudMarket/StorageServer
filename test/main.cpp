@@ -143,11 +143,7 @@ TEST_F(StorageUnitTest, TestStorageSetNoTable)
 	map<StorageKey, int> rsp;
 
 	ret = prx->setBatch(vdata,  rsp);
-	ASSERT_TRUE(ret == S_ERROR);
-	for(auto k : rsp)
-	{
-		ASSERT_TRUE(k.second == S_TABLE_NOT_EXIST);
-	}
+	ASSERT_TRUE(ret == S_TABLE_NOT_EXIST);
 
 	raftTest->stopAll();
 
@@ -666,7 +662,7 @@ TEST_F(StorageUnitTest, TestStorageSetGetBatchVersion)
 		rsp.clear();
 
 		ret = prx->setBatch(vdata,  rsp);
-		ASSERT_TRUE(ret == S_ERROR);
+		ASSERT_TRUE(ret == S_OK);
 		ASSERT_TRUE(vdata.size() == rsp.size());
 		for(auto k : rsp)
 		{
@@ -747,7 +743,7 @@ TEST_F(StorageUnitTest, TestStorageSetGetBatchTimestamp)
 		rsp.clear();
 
 		ret = prx->setBatch(vdata,  rsp);
-		ASSERT_TRUE(ret == S_ERROR);
+		ASSERT_TRUE(ret == S_OK);
 		ASSERT_TRUE(vdata.size() == rsp.size());
 		for(auto k : rsp)
 		{
@@ -1162,9 +1158,11 @@ TEST_F(StorageUnitTest, TestStorageJson)
 
 	raftTest->waitCluster();
 
+	LOG_CONSOLE_DEBUG << "wait ok" << endl;
 	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
 
 	prx->createTable("test_json");
+	LOG_CONSOLE_DEBUG << "createTable ok" << endl;
 
 	StorageKey skey;
 	skey.table = "test_json";
@@ -1190,9 +1188,11 @@ TEST_F(StorageUnitTest, TestStorageJson)
 
 	string buff = tj.writeToJsonString();
 	data.svalue.data.insert(data.svalue.data.end(), buff.begin(), buff.end());
+	LOG_CONSOLE_DEBUG << "begin set" << endl;
 
 	ret = prx->set(data);
 	ASSERT_TRUE(ret == 0);
+	LOG_CONSOLE_DEBUG << "set ok" << endl;
 
 	{
 		StorageValue value;
@@ -1245,7 +1245,11 @@ TEST_F(StorageUnitTest, TestStorageJson)
 		json.skey = skey;
 
 		json.supdate.push_back(update);
+		LOG_CONSOLE_DEBUG << "begin update" << endl;
+
 		ret = prx->update(json);
+		LOG_CONSOLE_DEBUG << "update ok" << endl;
+
 		ASSERT_TRUE(ret == 0);
 
 		StorageValue value;
@@ -1829,21 +1833,172 @@ TEST_F(StorageUnitTest, TestQueuePushBack)
 
 	prx->createQueue("test");
 
-	Base::QueueReq req;
-	Base::QueueRsp rsp;
+	vector<Base::QueuePushReq> pushReq;
+	vector<Base::QueueRsp> rsp;
 
+	QueuePushReq req;
 	req.queue = "test";
+	req.back = true;
+
 	req.data.assign(10, 'a');
-	ret = prx->push_back(req);
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'b');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'c');
+	pushReq.push_back(req);
+
+	ret = prx->push_queue(pushReq);
 
 	ASSERT_TRUE(ret == S_OK);
 
 	Base::Options options;
 	options.leader = true;
-	ret = prx->get_back(options, "test", rsp);
+
+	Base::QueuePopReq popReq;
+	popReq.back = true;
+	popReq.queue = "test";
+	popReq.count = 2;
+
+	ret = prx->get_queue(options, popReq, rsp);
 
 	ASSERT_TRUE(ret == S_OK);
-	ASSERT_TRUE(rsp.data == req.data);
+	ASSERT_TRUE(rsp.size() == popReq.count);
+	ASSERT_TRUE(rsp[0].data == pushReq[pushReq.size()-1].data);
+	ASSERT_TRUE(rsp[1].data == pushReq[pushReq.size()-2].data);
+
+	raftTest->stopAll();
+}
+
+TEST_F(StorageUnitTest, TestQueuePopBack)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	int ret;
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+	prx->createQueue("test");
+
+	vector<Base::QueuePushReq> pushReq;
+	vector<Base::QueueRsp> rsp;
+
+	QueuePushReq req;
+	req.queue = "test";
+	req.back = true;
+
+	req.data.assign(10, 'a');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'b');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'c');
+	pushReq.push_back(req);
+
+	LOG_CONSOLE_DEBUG << endl;
+	ret = prx->push_queue(pushReq);
+
+	ASSERT_TRUE(ret == S_OK);
+
+	Base::Options options;
+	options.leader = true;
+
+	Base::QueuePopReq popReq;
+	popReq.back = true;
+	popReq.queue = "test";
+	popReq.count = 2;
+
+	rsp.clear();
+	ret = prx->pop_queue(popReq, rsp);
+
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp.size() == popReq.count);
+	ASSERT_TRUE(rsp[0].data == pushReq[pushReq.size()-1].data);
+	ASSERT_TRUE(rsp[1].data == pushReq[pushReq.size()-2].data);
+
+	rsp.clear();
+	ret = prx->pop_queue(popReq, rsp);
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp.size() == pushReq.size() - popReq.count);
+	ASSERT_TRUE(rsp[0].data == pushReq[0].data);
+
+	rsp.clear();
+	ret = prx->pop_queue(popReq, rsp);
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp.size() == 0);
+
+	raftTest->stopAll();
+}
+
+
+TEST_F(StorageUnitTest, TestQueuePopFront)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	int ret;
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+	prx->createQueue("test");
+
+	vector<Base::QueuePushReq> pushReq;
+	vector<Base::QueueRsp> rsp;
+
+	QueuePushReq req;
+	req.queue = "test";
+	req.back = false;
+
+	req.data.assign(10, 'a');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'b');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'c');
+	pushReq.push_back(req);
+
+	ret = prx->push_queue(pushReq);
+
+	ASSERT_TRUE(ret == S_OK);
+
+	Base::Options options;
+	options.leader = true;
+
+	Base::QueuePopReq popReq;
+	popReq.back = false;
+	popReq.queue = "test";
+	popReq.count = 2;
+
+	rsp.clear();
+	ret = prx->pop_queue(popReq, rsp);
+
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp.size() == popReq.count);
+	ASSERT_TRUE(rsp[0].data == pushReq[pushReq.size()-1].data);
+	ASSERT_TRUE(rsp[1].data == pushReq[pushReq.size()-2].data);
+
+	rsp.clear();
+	ret = prx->pop_queue(popReq, rsp);
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp.size() == pushReq.size() - popReq.count);
+	ASSERT_TRUE(rsp[0].data == pushReq[0].data);
+
+	rsp.clear();
+	ret = prx->pop_queue(popReq, rsp);
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp.size() == 0);
 
 	raftTest->stopAll();
 }
@@ -1863,30 +2018,105 @@ TEST_F(StorageUnitTest, TestQueuePushFront)
 
 	prx->createQueue("test");
 
-	Base::QueueReq req;
-	Base::QueueRsp rsp;
+	vector<Base::QueuePushReq> pushReq;
+	vector<Base::QueueRsp> rsp;
+
+	QueuePushReq req;
+	req.queue = "test";
+	req.back = false;
+
+	req.data.assign(10, 'a');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'b');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'c');
+	pushReq.push_back(req);
+
+	ret = prx->push_queue(pushReq);
+
+	ASSERT_TRUE(ret == S_OK);
 
 	Base::Options options;
 	options.leader = true;
-	ret = prx->get_front(options, "test", rsp);
 
-	ASSERT_TRUE(ret == S_NO_DATA);
+	Base::QueuePopReq popReq;
+	popReq.queue = "test";
+	popReq.back = false;
+	popReq.count = 2;
 
-	req.queue = "test";
-	req.data.assign(10, 'a');
-	ret = prx->push_front(req);
-
-	ASSERT_TRUE(ret == S_OK);
-
-	options.leader = true;
-	ret = prx->get_front(options, "test", rsp);
+	rsp.clear();
+	ret = prx->get_queue(options, popReq, rsp);
 
 	ASSERT_TRUE(ret == S_OK);
-	ASSERT_TRUE(rsp.data == req.data);
+	ASSERT_TRUE(rsp.size() == popReq.count);
+	ASSERT_TRUE(rsp[0].data == pushReq[pushReq.size()-1].data);
+	ASSERT_TRUE(rsp[1].data == pushReq[pushReq.size()-2].data);
 
 	raftTest->stopAll();
 }
 
+TEST_F(StorageUnitTest, TestQueuePushFrontExpireTime)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	int ret;
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+	prx->createQueue("test");
+
+	vector<Base::QueuePushReq> pushReq;
+	vector<Base::QueueRsp> rsp;
+
+	QueuePushReq req;
+	req.queue = "test";
+	req.back = false;
+	req.expireTime = 2;
+
+	req.data.assign(10, 'a');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'b');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'c');
+	pushReq.push_back(req);
+
+	ret = prx->push_queue(pushReq);
+
+	ASSERT_TRUE(ret == S_OK);
+
+	TC_Common::sleep(4);
+
+	Base::Options options;
+	options.leader = true;
+
+	Base::QueuePopReq popReq;
+	popReq.queue = "test";
+	popReq.back = false;
+	popReq.count = 2;
+
+	rsp.clear();
+	ret = prx->get_queue(options, popReq, rsp);
+
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp.size() == 0);
+
+	TC_Common::sleep(1);
+
+	ret = prx->get_queue(options, popReq, rsp);
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp.size() == 0);
+
+	raftTest->stopAll();
+}
 
 TEST_F(StorageUnitTest, TestQueueDeleteData)
 {
@@ -1903,42 +2133,57 @@ TEST_F(StorageUnitTest, TestQueueDeleteData)
 
 	prx->createQueue("test");
 
-	Base::QueueReq req;
-	Base::QueueRsp rsp;
+	vector<Base::QueuePushReq> pushReq;
+	vector<Base::QueueRsp> rsp;
 
+	QueuePushReq req;
+	req.queue = "test";
+	req.back = false;
+	req.data.assign(10, 'a');
+
+	pushReq.push_back(req);
+	ret = prx->push_queue(pushReq);
+
+	ASSERT_TRUE(ret == S_OK);
 	Base::Options options;
 	options.leader = true;
 
-	req.queue = "test";
-	req.data.assign(10, 'a');
-	ret = prx->push_front(req);
+	Base::QueuePopReq popReq;
+	popReq.queue = "test";
+	popReq.back = false;
+
+	ret = prx->get_queue(options, popReq, rsp);
 
 	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp[0].data == req.data);
 
-	options.leader = true;
-	ret = prx->get_front(options, "test", rsp);
+	vector<QueueIndex> indexReq;
+	QueueIndex qi;
+	qi.queue = "test";
+	qi.index = rsp[0].index;
+
+	indexReq.push_back(qi);
+
+	rsp.clear();
+	ret = prx->getQueueData(options, indexReq, rsp);
 
 	ASSERT_TRUE(ret == S_OK);
-	ASSERT_TRUE(rsp.data == req.data);
+	ASSERT_TRUE(rsp[0].data == req.data);
 
-	LOG_CONSOLE_DEBUG << "get data:" << rsp.index << endl;
-	ret = prx->getData(options, "test", rsp.index, rsp);
-	LOG_CONSOLE_DEBUG << ret << endl;
+	ret = prx->deleteQueueData(indexReq);
 	ASSERT_TRUE(ret == S_OK);
-	ASSERT_TRUE(rsp.data == req.data);
+	rsp.clear();
+	ret = prx->get_queue(options, popReq, rsp);
 
-	LOG_CONSOLE_DEBUG << "delete data:" << rsp.index << endl;
-	ret = prx->deleteData("test", rsp.index);
+	LOG_CONSOLE_DEBUG << "size:" << rsp.size() << endl;
+
 	ASSERT_TRUE(ret == S_OK);
-	ret = prx->get_front(options, "test", rsp);
+	ASSERT_TRUE(rsp.size() == 0);
 
-	ASSERT_TRUE(ret == S_NO_DATA);
 	raftTest->stopAll();
 }
 
-
-
-TEST_F(StorageUnitTest, TestQueueClearQueue)
+TEST_F(StorageUnitTest, TestQueueDoBatch)
 {
 	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
 	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
@@ -1948,27 +2193,170 @@ TEST_F(StorageUnitTest, TestQueueClearQueue)
 
 	raftTest->waitCluster();
 
+	Options options;
+	options.leader = true;
+
 	int ret;
 	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
 
-	prx->createQueue("test");
+	prx->createTable("test");
 
-	Base::QueueReq req;
-	Base::QueueRsp rsp;
-	req.queue = "test";
-	req.data.assign(10, 'a');
-	ret = prx->push_front(req);
-	ASSERT_TRUE(ret == S_OK);
+	StorageKey skey;
+	skey.table = "test";
+	skey.mkey = "test";
 
-	ret = prx->clearQueue("test");
-	LOG_CONSOLE_DEBUG << ret << endl;
-	ASSERT_TRUE(ret == S_OK);
+	StorageData data;
+	data.skey = skey;
 
-	Base::Options options;
-	options.leader = true;
-	ret = prx->get_front(options, "test", rsp);
+	TestJson  tj;
+	tj.str = "abc";
+	tj.boon = true;
+	tj.inte = 10;
+	tj.doub = 11.f;
+	tj.strs.push_back("def");
+	tj.intes.push_back(10);
+	tj.doubs.push_back(11.f);
 
-	ASSERT_TRUE(ret == S_NO_DATA);
+	string buff = tj.writeToJsonString();
+	data.svalue.data.insert(data.svalue.data.end(), buff.begin(), buff.end());
+
+	ret = prx->set(data);
+	ASSERT_TRUE(ret == 0);
+
+	ret = prx->createQueue("test");
+	ASSERT_TRUE(ret == 0);
+
+	BatchDataReq batchReq;
+	{
+
+		vector<char> v;
+		v.resize(100, 'a');
+
+		vector<StorageData> vdata;
+		for (size_t i = 0; i < 10; i++)
+		{
+			StorageData data;
+			data.skey.table = "test";
+			data.skey.mkey = "abc";
+			data.skey.ukey = TC_Common::tostr(i);
+			data.svalue.data = v;
+
+			vdata.push_back(data);
+		}
+
+		batchReq.sData = vdata;
+	}
+
+	{
+		vector<Base::QueuePushReq> pushReq;
+		vector<Base::QueueRsp> rsp;
+
+		QueuePushReq req;
+		req.queue = "test";
+		req.back = false;
+
+		req.data.assign(10, 'a');
+		pushReq.push_back(req);
+
+		req.data.assign(10, 'b');
+		pushReq.push_back(req);
+
+		req.data.assign(10, 'c');
+		pushReq.push_back(req);
+
+		batchReq.qData = pushReq;
+	}
+
+	{
+		{
+			StorageUpdate update;
+			update.type = Base::FT_STRING;
+			update.value = "xxxx";
+			update.field = "str";
+			update.op = Base::SO_ADD;
+
+			StorageJson json;
+			json.skey = skey;
+
+			json.supdate.push_back(update);
+
+			batchReq.uData.push_back(json);
+		}
+
+		{
+			StorageUpdate update;
+			update.type = Base::FT_INTEGER;
+			update.value = "5";
+			update.field = "inte";
+			update.op = Base::SO_ADD;
+
+			StorageJson json;
+			json.skey = skey;
+
+			json.supdate.push_back(update);
+
+			batchReq.uData.push_back(json);
+		}
+	}
+
+	BatchDataRsp rsp;
+
+	ret = prx->doBatch(batchReq,  rsp);
+
+	ASSERT_TRUE(ret == 0);
+	LOG_CONSOLE_DEBUG << batchReq.sData.size() << ", " << rsp.sRsp.size() << endl;
+	ASSERT_TRUE(batchReq.sData.size() == rsp.sRsp.size());
+	for(auto k : rsp.sRsp)
+	{
+		ASSERT_TRUE(k.second == S_OK);
+	}
+
+	vector<StorageKey> sRspKey;
+	for(auto &data : batchReq.sData)
+	{
+		sRspKey.push_back(data.skey);
+	}
+
+	vector<StorageData> rdata;
+	ret = prx->getBatch(options, sRspKey, rdata);
+	ASSERT_TRUE(ret == 0);
+
+	ASSERT_TRUE(rdata.size() == sRspKey.size());
+	for(auto &data : rdata)
+	{
+		ASSERT_TRUE(data.ret == 0);
+	}
+
+	{
+		Base::QueuePopReq popReq;
+		popReq.queue = "test";
+		popReq.back = false;
+
+		vector<Base::QueueRsp> qRsp;
+		ret = prx->get_queue(options, popReq, qRsp);
+
+		ASSERT_TRUE(ret == S_OK);
+		ASSERT_TRUE(qRsp[0].data == batchReq.qData[batchReq.qData.size() - 1].data);
+	}
+
+	{
+
+		StorageValue value;
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+
+		JsonValuePtr pPtr = TC_Json::getValue(string(value.data.data(), value.data.size()));
+
+		JsonValueObjPtr oPtr = JsonValueObjPtr::dynamicCast(pPtr);
+
+		ASSERT_TRUE(oPtr->value.find("str") != oPtr->value.end());
+		LOG_CONSOLE_DEBUG << JsonValueStringPtr::dynamicCast(oPtr->value["str"])->value << endl;
+		LOG_CONSOLE_DEBUG << JsonValueNumPtr::dynamicCast(oPtr->value["inte"])->lvalue << endl;
+
+		ASSERT_TRUE(JsonValueStringPtr::dynamicCast(oPtr->value["str"])->value == "abcxxxx");
+		ASSERT_TRUE(JsonValueNumPtr::dynamicCast(oPtr->value["inte"])->lvalue == 15);
+
+	}
 
 	raftTest->stopAll();
 }

@@ -19,18 +19,6 @@ void StorageServer::initialize()
 	if(ServerConfig::DataPath == "./debug-data/")
 	{
 		dataPath = ServerConfig::DataPath;
-
-//		_index = TC_Endpoint(getConfig().get("/tars/application/server/Base.StorageServer.RaftObjAdapter<endpoint>", "")).getPort();
-//
-//		if(_nodeInfo.nodes.empty())
-//		{
-//			_nodeInfo.nodes.push_back(std::make_pair(TC_Endpoint("tcp -h 127.0.0.1 -p 10101"),
-//					TC_Endpoint("tcp -h 127.0.0.1 -p 10401 -t 60000")));
-//			_nodeInfo.nodes.push_back(std::make_pair(TC_Endpoint("tcp -h 127.0.0.1 -p 10102"),
-//					TC_Endpoint("tcp -h 127.0.0.1 -p 10402 -t 60000")));
-//			_nodeInfo.nodes.push_back(std::make_pair(TC_Endpoint("tcp -h 127.0.0.1 -p 10103"),
-//					TC_Endpoint("tcp -h 127.0.0.1 -p 10403 -t 60000")));
-//		}
 	}
 	else
 	{
@@ -59,7 +47,7 @@ void StorageServer::initialize()
 	TLOG_DEBUG("maxLogEntriesTransfering:" << raftOptions.maxLogEntriesTransfering << endl);
 	TLOG_DEBUG("dataDir:" << raftOptions.dataDir << endl);
 
-	onInitializeRaft(raftOptions, "StorageObj", TC_File::simplifyDirectory(dataPath + FILE_SEP + "StorageLog-" + TC_Common::tostr(_index)));
+	onInitializeRaft(raftOptions, "StorageObj", TC_File::simplifyDirectory(dataPath + FILE_SEP + "StorageLog-" + TC_Common::tostr(_index)), this);
 
 	TARS_ADD_ADMIN_CMD_NORMAL("storage.get", StorageServer::cmdGet);
 	TARS_ADD_ADMIN_CMD_NORMAL("storage.set", StorageServer::cmdSet);

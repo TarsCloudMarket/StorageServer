@@ -13,6 +13,8 @@
 #include "RaftNode.h"
 #include <string.h>
 #include "Storage.h"
+#include "StorageServer.h"
+
 using namespace Base;
 
 const string StorageStateMachine::SET_TYPE  = "m1";
@@ -23,13 +25,12 @@ const string StorageStateMachine::TABLE_TYPE = "m5";
 const string StorageStateMachine::SET_JSON_TYPE = "m6";
 const string StorageStateMachine::BSET_JSON_TYPE = "m7";
 
-const string StorageStateMachine::QUEUE_TYPE = "q1";
-const string StorageStateMachine::PUSH_BACK_TYPE = "q2";
-const string StorageStateMachine::PUSH_FRONT_TYPE = "q3";
-const string StorageStateMachine::POP_BACK_DEL_TYPE = "q6";
-const string StorageStateMachine::POP_FRONT_DEL_TYPE = "q7";
-const string StorageStateMachine::DEL_DATA_TYPE = "q8";
-const string StorageStateMachine::CLEAR_QUEUE_TYPE = "q9";
+const string StorageStateMachine::CREATE_QUEUE_TYPE = "q1";
+const string StorageStateMachine::PUSH_QUEUE_TYPE = "q2";
+const string StorageStateMachine::POP_QUEUE_TYPE = "q3";
+const string StorageStateMachine::DEL_QUEUE_TYPE = "q4";
+
+const string StorageStateMachine::BATCH_DATA = "batch";
 
 //////////////////////////////////////////////////////////////////////////////////////
 class TTLCompactionFilter : public rocksdb::CompactionFilter
@@ -140,9 +141,10 @@ public:
 };
 
 //////////////////////////////////////////////////////////////////////////////////////
-StorageStateMachine::StorageStateMachine(const string &dataPath)
+StorageStateMachine::StorageStateMachine(const string &dataPath, StorageServer *server)
 {
 	_raftDataDir = dataPath;
+	_server = server;
 
 	_onApply[SET_TYPE] = std::bind(&StorageStateMachine::onSet, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[BSET_TYPE] = std::bind(&StorageStateMachine::onSetBatch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
@@ -152,14 +154,12 @@ StorageStateMachine::StorageStateMachine(const string &dataPath)
 	_onApply[SET_JSON_TYPE] = std::bind(&StorageStateMachine::onUpdate, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[BSET_JSON_TYPE] = std::bind(&StorageStateMachine::onUpdateBatch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 
+	_onApply[CREATE_QUEUE_TYPE] = std::bind(&StorageStateMachine::onCreateQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[DEL_QUEUE_TYPE] = std::bind(&StorageStateMachine::onDeleteQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[PUSH_QUEUE_TYPE] = std::bind(&StorageStateMachine::onPushQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[POP_QUEUE_TYPE] = std::bind(&StorageStateMachine::onPopQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 
-	_onApply[QUEUE_TYPE] = std::bind(&StorageStateMachine::onCreateQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
-	_onApply[DEL_DATA_TYPE] = std::bind(&StorageStateMachine::onDeleteData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
-	_onApply[PUSH_BACK_TYPE] = std::bind(&StorageStateMachine::onPushBack, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
-	_onApply[PUSH_FRONT_TYPE] = std::bind(&StorageStateMachine::onPushFront, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
-	_onApply[POP_BACK_DEL_TYPE] = std::bind(&StorageStateMachine::onPopBack, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
-	_onApply[POP_FRONT_DEL_TYPE] = std::bind(&StorageStateMachine::onPopFront, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
-	_onApply[CLEAR_QUEUE_TYPE] = std::bind(&StorageStateMachine::onClearQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[BATCH_DATA] = std::bind(&StorageStateMachine::onBatch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 
 	_updateApply[eJsonTypeString][SO_REPLACE] = std::bind(&StorageStateMachine::updateStringReplace, this, std::placeholders::_1, std::placeholders::_2);
 	_updateApply[eJsonTypeString][SO_ADD] = std::bind(&StorageStateMachine::updateStringAdd, this, std::placeholders::_1, std::placeholders::_2);
@@ -178,6 +178,11 @@ StorageStateMachine::StorageStateMachine(const string &dataPath)
 StorageStateMachine::~StorageStateMachine()
 {
 	close();
+}
+
+void StorageStateMachine::terminate()
+{
+	_server->terminate();
 }
 
 shared_ptr<StorageStateMachine::AutoSlice> StorageStateMachine::tokeyUpper(const string &mkey)
@@ -428,7 +433,7 @@ int64_t StorageStateMachine::onLoadData()
 	else if(!s.ok())
 	{
 		TLOG_ERROR("Get lastAppliedIndex error!" << s.ToString() << endl);
-		exit(-1);
+		terminate();
 	}
 
 	TLOG_DEBUG("lastAppliedIndex:" << lastAppliedIndex << endl);
@@ -516,6 +521,8 @@ int StorageStateMachine::has(const StorageKey &skey)
 	{
 		TLOG_ERROR("Get: " << key << ", error:" << s.ToString() << endl);
 
+		terminate();
+
 		return S_ERROR;
 	}
 
@@ -576,6 +583,7 @@ int StorageStateMachine::get(const StorageKey &skey, StorageValue &data)
 	{
 		TLOG_ERROR("Get: " << skey.table << ", mkey:" << skey.mkey << ", ukey:" << skey.ukey << ", error:" << s.ToString() << endl);
 
+		terminate();
 		return S_ERROR;
 	}
 
@@ -863,7 +871,7 @@ int StorageStateMachine::checkStorageData(rocksdb::ColumnFamilyHandle* handle, c
 		else
 		{
 			TLOG_ERROR("Get: " << sdata.skey.mkey + "-" + sdata.skey.ukey << ", error:" << s.ToString() << endl);
-
+			terminate();
 			return S_ERROR;
 		}
 	}
@@ -884,7 +892,7 @@ void StorageStateMachine::writeBatch(rocksdb::WriteBatch &batch, int64_t applied
 	if(!s.ok())
 	{
 		TLOG_ERROR("writeBatch error!" << endl);
-		exit(-1);
+		terminate();
 	}
 }
 
@@ -904,6 +912,8 @@ void StorageStateMachine::onSet(TarsInputStream<> &is, int64_t appliedIndex, con
 	}
 
 	int ret;
+
+	rocksdb::WriteBatch batch;
 
 	auto handle = getTable(data.skey.table);
 
@@ -928,13 +938,11 @@ void StorageStateMachine::onSet(TarsInputStream<> &is, int64_t appliedIndex, con
 
 			auto key = tokey(data.skey);
 
-			rocksdb::WriteBatch batch;
-
 			batch.Put(handle, rocksdb::Slice(key->data, key->length), rocksdb::Slice(buff.getBuffer(), buff.getLength()));
-
-			writeBatch(batch, appliedIndex);
 		}
 	}
+
+	writeBatch(batch, appliedIndex);
 
 	if(callback)
 	{
@@ -944,185 +952,179 @@ void StorageStateMachine::onSet(TarsInputStream<> &is, int64_t appliedIndex, con
 	}
 }
 
-int StorageStateMachine::onUpdateJson(rocksdb::WriteBatch &batch, const StorageJson &update)
+int StorageStateMachine::onUpdateJson(rocksdb::WriteBatch &batch, const StorageJson &update, map<rocksdb::ColumnFamilyHandle*, map<string, pair<StorageValue, JsonValueObjPtr>>> &result)
 {
 	STORAGE_RT ret = S_OK;
 
 	auto handle = getTable(update.skey.table);
 
-	if(!handle)
-	{
-		TLOG_ERROR("table:" << update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", table not exists" << endl);
+	assert(handle);
 
-		ret = S_TABLE_NOT_EXIST;
-	}
-	else
+	JsonValueObjPtr json;
+
+	auto key = tokey(update.skey);
+
+	string skey = string(key->data, key->length);
+	auto it = result[handle].find(skey);
+
+	if (it == result[handle].end())
 	{
 		std::string value;
-		auto key = tokey(update.skey);
+
 		rocksdb::Status s = _db->Get(rocksdb::ReadOptions(), handle, rocksdb::Slice(key->data, key->length), &value);
-		if (s.ok() || s.IsNotFound())
-		{
-			ret = S_OK;
-
-			StorageValue data;
-
-			JsonValueObjPtr json;
-
-			if(s.ok())
-			{
-				TarsInputStream<> is;
-				is.setBuffer(value.c_str(), value.length());
-				data.readFrom(is);
-
-				json = JsonValueObjPtr::dynamicCast(TC_Json::getValue(data.data));
-
-				if (!json)
-				{
-					TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", parse to json error." << endl);
-
-					ret = S_JSON_VALUE_NOT_JSON;
-				}
-			}
-			else
-			{
-				data.version = 0;
-				data.expireTime = 0;
-				data.timestamp = 0;
-
-				json = new JsonValueObj();
-			}
-
-			if(ret != S_OK)
-			{
-				return ret;
-			}
-
-			for(auto &e : update.supdate)
-			{
-				auto it = json->value.find(e.field);
-				if(it != json->value.end())
-				{
-					auto tIt = this->_updateApply.find(it->second->getType());
-					if(tIt != this->_updateApply.end())
-					{
-						auto rIt = tIt->second.find(e.op);
-
-						if(rIt != tIt->second.end())
-						{
-							ret = rIt->second(it->second, e);
-
-							if(ret != S_OK)
-							{
-								TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << " , op:" << etos(e.op) << ", ret:" << etos(ret) << endl);
-								break;
-							}
-						}
-						else
-						{
-							ret = Base::S_JSON_OPERATOR_NOT_SUPPORT;
-
-							TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << " , op:" << etos(e.op) << ", ret:" << etos(ret) << endl);
-
-							break;
-						}
-					}
-				}
-				else if(!e.def.empty())
-				{
-					JsonValuePtr value;
-
-					switch(e.type)
-					{
-					case Base::FT_INTEGER:
-						value = new JsonValueNum(TC_Common::strto<int64_t>(e.def), true);
-						break;
-					case Base::FT_DOUBLE:
-						value = new JsonValueNum(TC_Common::strto<double>(e.def), false);
-						break;
-					case Base::FT_STRING:
-						value = new JsonValueString(e.def);
-						break;
-					case Base::FT_BOOLEAN:
-						value = new JsonValueBoolean(TC_Port::strncasecmp(e.def.c_str(),"true", e.def.size()) == 0);
-						break;
-					case Base::FT_ARRAY:
-					{
-						value = JsonValueArrayPtr::dynamicCast(TC_Json::getValue(e.def));
-						break;
-					}
-					default:
-						ret = S_JSON_VALUE_TYPE_ERROR;
-						break;
-					}
-
-					if(ret != S_OK)
-					{
-						break;
-					}
-
-					if(value)
-					{
-						json->value[e.field] = value;
-					}
-				}
-				else
-				{
-					ret = S_JSON_FIELD_NOT_EXITS;
-					TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", field:" << e.field << " in not exists, op:" << etos(e.op) << ", ret:" << etos(ret) << endl);
-					break;
-				}
-			}
-
-			if(ret != S_OK)
-			{
-				return ret;
-			}
-
-			TC_Json::writeValue(json, data.data);
-
-			if (data.expireTime > 0)
-			{
-				data.expireTime += TNOW;
-			}
-
-			TarsOutputStream<> buff;
-			while (data.version == 0)
-			{
-				++data.version;
-			}
-
-			data.writeTo(buff);
-
-			batch.Put(handle, rocksdb::Slice(key->data, key->length), rocksdb::Slice(buff.getBuffer(), buff.getLength()));
-		}
-		else
+		if (!s.ok() && !s.IsNotFound())
 		{
 			TLOG_ERROR("Get: " << update.skey.mkey + "-" + update.skey.ukey << ", error:" << s.ToString() << endl);
 
 			ret = S_ERROR;
+
+			//这种情况服务数据出严重问题了!!!
+			terminate();
+			return S_ERROR;
 		}
+
+		StorageValue data;
+
+		if (s.ok())
+		{
+			TarsInputStream<> is;
+			is.setBuffer(value.c_str(), value.length());
+			data.readFrom(is);
+
+			json = JsonValueObjPtr::dynamicCast(TC_Json::getValue(data.data));
+
+			if (!json)
+			{
+				TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey
+											 << ", parse to json error." << endl);
+
+				ret = S_JSON_VALUE_NOT_JSON;
+			}
+		}
+		else
+		{
+			data.version = 0;
+			data.expireTime = 0;
+			data.timestamp = 0;
+			json = new JsonValueObj();
+		}
+
+		result[handle][skey] = std::make_pair(data, json);
+
+	}
+	else
+	{
+		json = it->second.second;
+	}
+
+	if (ret != S_OK)
+	{
+		return ret;
+	}
+
+	for (auto& e: update.supdate)
+	{
+		auto it = json->value.find(e.field);
+		if (it != json->value.end())
+		{
+			auto tIt = this->_updateApply.find(it->second->getType());
+			if (tIt != this->_updateApply.end())
+			{
+				auto rIt = tIt->second.find(e.op);
+
+				if (rIt != tIt->second.end())
+				{
+					ret = rIt->second(it->second, e);
+
+					if (ret != S_OK)
+					{
+						TLOG_ERROR(
+								update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey
+												  << ", field:" << e.field << " , op:" << etos(e.op) << ", ret:"
+												  << etos(ret) << endl);
+						break;
+					}
+				}
+				else
+				{
+					ret = Base::S_JSON_OPERATOR_NOT_SUPPORT;
+
+					TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey
+												 << ", field:" << e.field << " , op:" << etos(e.op) << ", ret:"
+												 << etos(ret) << endl);
+
+					break;
+				}
+			}
+		}
+		else if (!e.def.empty())
+		{
+			JsonValuePtr value;
+
+			switch (e.type)
+			{
+			case Base::FT_INTEGER:
+				value = new JsonValueNum(TC_Common::strto<int64_t>(e.def), true);
+				break;
+			case Base::FT_DOUBLE:
+				value = new JsonValueNum(TC_Common::strto<double>(e.def), false);
+				break;
+			case Base::FT_STRING:
+				value = new JsonValueString(e.def);
+				break;
+			case Base::FT_BOOLEAN:
+				value = new JsonValueBoolean(TC_Port::strncasecmp(e.def.c_str(), "true", e.def.size()) == 0);
+				break;
+			case Base::FT_ARRAY:
+			{
+				value = JsonValueArrayPtr::dynamicCast(TC_Json::getValue(e.def));
+				break;
+			}
+			default:
+				ret = S_JSON_VALUE_TYPE_ERROR;
+				break;
+			}
+
+			if (ret != S_OK)
+			{
+				break;
+			}
+
+			if (value)
+			{
+				json->value[e.field] = value;
+			}
+		}
+		else
+		{
+			ret = S_JSON_FIELD_NOT_EXITS;
+			TLOG_ERROR(update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey
+										 << ", field:" << e.field << " in not exists, op:" << etos(e.op) << ", ret:"
+										 << etos(ret) << endl);
+			break;
+		}
+
+
 	}
 
 	return ret;
 }
+
 void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
 {
-	StorageJson update;
+	vector<StorageJson> updates;
+	updates.resize(1);
 
-	is.read(update, 1, false);
+	is.read(updates[0], 1, false);
 
-	TLOG_DEBUG("table:" << update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey
-						<< ", appliedIndex:" << appliedIndex << ", update:" << TC_Common::tostr(update.supdate.begin(), update.supdate.end(), " ") << endl);
+	TLOG_DEBUG("table:" << updates[0].skey.table << ", mkey:" << updates[0].skey.mkey << ", ukey:" << updates[0].skey.ukey
+						<< ", appliedIndex:" << appliedIndex << ", update:" << TC_Common::tostr(updates[0].supdate.begin(), updates[0].supdate.end(), " ") << endl);
 
 	rocksdb::WriteBatch batch;
 
-	int ret = onUpdateJson(batch, update);
+	int ret = updateBatch(batch, updates);
 
-	if(ret == S_OK)
-	{
-		writeBatch(batch, appliedIndex);
-	}
+	writeBatch(batch, appliedIndex);
 
 	if(callback)
 	{
@@ -1132,20 +1134,32 @@ void StorageStateMachine::onUpdate(TarsInputStream<> &is, int64_t appliedIndex, 
 	}
 }
 
-
-void StorageStateMachine::onUpdateBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+STORAGE_RT StorageStateMachine::updateBatch(rocksdb::WriteBatch &batch, const vector<StorageJson> &updates)
 {
-	vector<StorageJson> updates;
-
-	is.read(updates, 1, false);
-
-	rocksdb::WriteBatch batch;
-
-	STORAGE_RT ret = S_OK;
+	int ret = S_OK;
 
 	for(auto &update : updates)
 	{
-		int ret = onUpdateJson(batch, update);
+		auto handle = getTable(update.skey.table);
+
+		if(!handle)
+		{
+			TLOG_ERROR("table:" << update.skey.table << ", mkey:" << update.skey.mkey << ", ukey:" << update.skey.ukey << ", table not exists" << endl);
+
+			ret = S_TABLE_NOT_EXIST;
+		}
+	}
+
+	if(ret != S_OK)
+	{
+		return (STORAGE_RT)ret;
+	}
+
+	map<rocksdb::ColumnFamilyHandle*, map<string, pair<StorageValue, JsonValueObjPtr>>> result;
+
+	for(auto &update : updates)
+	{
+		ret = onUpdateJson(batch, update, result);
 
 		if(ret != S_OK)
 		{
@@ -1155,8 +1169,45 @@ void StorageStateMachine::onUpdateBatch(TarsInputStream<> &is, int64_t appliedIn
 
 	if(ret == S_OK)
 	{
-		writeBatch(batch, appliedIndex);
+		for(auto data : result)
+		{
+			for(auto it : data.second)
+			{
+				TC_Json::writeValue(it.second.second, it.second.first.data);
+
+				if (it.second.first.expireTime > 0)
+				{
+					it.second.first.expireTime += TNOW;
+				}
+
+				TarsOutputStream<> buff;
+				while (it.second.first.version == 0)
+				{
+					++it.second.first.version;
+				}
+
+				it.second.first.writeTo(buff);
+
+				batch.Put(data.first, rocksdb::Slice(it.first.c_str(), it.first.length()),
+						rocksdb::Slice(buff.getBuffer(), buff.getLength()));
+			}
+		}
 	}
+
+	return (STORAGE_RT)ret;
+}
+
+void StorageStateMachine::onUpdateBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	vector<StorageJson> updates;
+
+	is.read(updates, 1, false);
+
+	rocksdb::WriteBatch batch;
+
+	STORAGE_RT ret = updateBatch(batch, updates);
+
+	writeBatch(batch, appliedIndex);
 
 	if(callback)
 	{
@@ -1164,6 +1215,59 @@ void StorageStateMachine::onUpdateBatch(TarsInputStream<> &is, int64_t appliedIn
 
 		Storage::async_response_update(callback->getCurrentPtr(), ret);
 	}
+}
+
+STORAGE_RT StorageStateMachine::setBatch(rocksdb::WriteBatch &batch, const vector<StorageData> &vdata, map<StorageKey, int> &rsp)
+{
+	for(size_t i = 0; i < vdata.size(); i++)
+	{
+		StorageData& data = const_cast<StorageData&>(vdata[i]);
+
+		auto handle = getTable(data.skey.table);
+
+		if (!handle)
+		{
+			return Base::S_TABLE_NOT_EXIST;
+		}
+	}
+
+	for(size_t i = 0; i < vdata.size(); i++)
+	{
+		StorageData &data = const_cast<StorageData&>(vdata[i]);
+
+		auto handle = getTable(data.skey.table);
+
+		assert(handle);
+
+		int ret = checkStorageData(handle, data);
+
+		if(ret != S_OK)
+		{
+			rsp[data.skey] = ret;
+		}
+		else
+		{
+			if (data.svalue.expireTime > 0)
+			{
+				data.svalue.expireTime += TNOW;
+			}
+
+			TarsOutputStream<> buff;
+			while (data.svalue.version == 0)
+			{
+				++data.svalue.version;
+			}
+
+			data.svalue.writeTo(buff);
+
+			auto key = tokey(data.skey);
+			batch.Put(handle, rocksdb::Slice(key->data, key->length),
+					rocksdb::Slice(buff.getBuffer(), buff.getLength()));
+
+			rsp[data.skey] = S_OK;
+		}
+	}
+	return S_OK;
 }
 
 void StorageStateMachine::onSetBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
@@ -1180,45 +1284,7 @@ void StorageStateMachine::onSetBatch(TarsInputStream<> &is, int64_t appliedIndex
 
 	rocksdb::WriteBatch batch;
 
-	for(auto &data : vdata)
-	{
-		auto handle = getTable(data.skey.table);
-
-		if(!handle)
-		{
-			bret = S_ERROR;
-			rsp[data.skey] = S_TABLE_NOT_EXIST;
-		}
-		else
-		{
-			int ret = checkStorageData(handle, data);
-
-			if(ret != S_OK)
-			{
-				bret = S_ERROR;
-				rsp[data.skey] = ret;
-			}
-			else
-			{
-				if(data.svalue.expireTime>0) {
-					data.svalue.expireTime += TNOW;
-				}
-
-				TarsOutputStream<> buff;
-				while(data.svalue.version == 0)
-				{
-					++data.svalue.version;
-				}
-
-				data.svalue.writeTo(buff);
-
-				auto key = tokey(data.skey);
-				batch.Put(handle, rocksdb::Slice(key->data, key->length), rocksdb::Slice(buff.getBuffer(), buff.getLength()));
-
-				rsp[data.skey] = S_OK;
-			}
-		}
-	}
+	bret = setBatch(batch, vdata, rsp);
 
 	writeBatch(batch, appliedIndex);
 
@@ -1720,103 +1786,142 @@ STORAGE_RT StorageStateMachine::updateArrayAddNoRepeat(JsonValuePtr &value, cons
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////
-int StorageStateMachine::get_back(const string &queue, QueueRsp &rsp)
+
+void StorageStateMachine::get_data(const string &queue, int64_t index, const char *buff, size_t length, vector<QueueRsp> &rsp)
 {
-	TLOG_DEBUG("queue:" << queue << endl);
+	TarsInputStream<> is;
+	is.setBuffer(buff, length);
+	QueueData qd;
+	qd.readFrom(is);
 
-	auto handle = getQueue(queue);
-	if(!handle)
+	if(qd.expireTime <= 0 || (qd.expireTime > 0 && qd.expireTime > TNOW))
 	{
-		TLOG_ERROR("queue:" << queue << ", queue not exists!" << endl);
-		return S_QUEUE_NOT_EXIST;
-	}
+		QueueRsp data;
+		data.queue = queue;
+		data.index = index;
 
-	auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+		//未过期
+		data.data.swap(qd.data);
 
-	it->SeekToLast();
-
-	if(!it->Valid())
-	{
-		TLOG_DEBUG("queue:" << queue << " no data" << endl);
-
-		return S_NO_DATA;
-	}
-
-	rocksdb::Slice value = it->value();
-
-	rsp.index = *(int64_t*)(it->key().data());
-	rsp.data.assign(value.data(), value.data() + value.size());
-
-//	LOG_CONSOLE_DEBUG << string(data.data(), data.size()) << endl;
-
-	TLOG_DEBUG("queue:" << queue << " succ, size:" << value.size() << endl);
-
-	return S_OK;
-}
-
-int StorageStateMachine::get_front(const string &queue, QueueRsp &rsp)
-{
-	TLOG_DEBUG("queue:" << queue << endl);
-
-	auto handle = getQueue(queue);
-	if(!handle)
-	{
-		TLOG_ERROR("queue:" << queue << ", queue not exists!" << endl);
-		return S_QUEUE_NOT_EXIST;
-	}
-
-	auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
-
-	it->SeekToFirst();
-
-	if(!it->Valid())
-	{
-		TLOG_DEBUG("queue:" << queue << " no data" << endl);
-
-		return S_NO_DATA;
-	}
-
-	rocksdb::Slice value = it->value();
-
-	rsp.index = *(int64_t*)(it->key().data());
-	rsp.data.assign(value.data(), value.data() + value.size());
-
-	TLOG_DEBUG("queue:" << queue << " succ, size:" << value.size() << endl);
-
-	return S_OK;
-}
-
-int StorageStateMachine::get(const string &queue, int64_t index, QueueRsp &rsp)
-{
-	auto handle = getQueue(queue);
-	if(!handle)
-	{
-		TLOG_ERROR("queue:" << queue << ", queue not exists!" << endl);
-		return S_QUEUE_NOT_EXIST;
-	}
-
-	rsp.index = index;
-
-	string value;
-
-	auto s = _db->Get(rocksdb::ReadOptions(), handle, rocksdb::Slice((const char *)&index, sizeof(index)), &value);
-	if (s.ok())
-	{
-//		LOG_CONSOLE_DEBUG << "index:" << index << ", buff size:" << value.size() << endl;
-		rsp.data.assign(value.c_str(), value.c_str() + value.size());
-		return S_OK;
-	}
-	else if(s.IsNotFound())
-	{
-		return S_NO_DATA;
+		rsp.push_back(data);
 	}
 	else
 	{
-//		LOG_CONSOLE_DEBUG << "get error" << s.ToString() << endl;
+		//队列数据超时了, 删除之
+		auto raftNode = this->_raftNode.lock();
+		if(raftNode && raftNode->isLeader())
+		{
+			vector<QueueIndex> req;
+			QueueIndex qi;
+			qi.queue = queue;
+			qi.index = index;
+			req.push_back(qi);
 
-		TLOG_ERROR("Get: " << queue << ", index: " << index << ", error:" << s.ToString() << endl);
+			TarsOutputStream<BufferWriterString> os;
 
-		return S_ERROR;
+			os.write(StorageStateMachine::DEL_QUEUE_TYPE, 0);
+			os.write(req, 1);
+
+			shared_ptr<ApplyContext> context = std::make_shared<ApplyContext>();
+			raftNode->replicate(os.getByteBuffer(), context);
+
+		}
+
+	}
+}
+
+int StorageStateMachine::get_queue(const QueuePopReq &req, vector<QueueRsp> &rsp)
+{
+	TLOG_DEBUG("queue:" << req.queue << endl);
+
+	auto handle = getQueue(req.queue);
+	if(!handle)
+	{
+		TLOG_ERROR("queue:" << req.queue << ", queue not exists!" << endl);
+		return S_QUEUE_NOT_EXIST;
+	}
+
+	if(req.back)
+	{
+		auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+
+		it->SeekToLast();
+
+		while(rsp.size() < req.count)
+		{
+			if (!it->Valid())
+			{
+				TLOG_DEBUG("queue:" << req.queue << " no data, size:" << rsp.size() << ", count size:" << req.count << endl);
+
+				return S_OK;
+			}
+
+			int64_t index = *(int64_t*)(it->key().data());
+			rocksdb::Slice value = it->value();
+
+			get_data(req.queue, index, value.data(), value.size(), rsp);
+
+			it->Prev();
+		}
+	}
+	else
+	{
+		auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+
+		it->SeekToFirst();
+
+		while(rsp.size() < req.count)
+		{
+			if (!it->Valid())
+			{
+				TLOG_DEBUG("queue:" << req.queue << " no data, size:" << rsp.size() << ", count size:" << req.count << endl);
+
+				return S_OK;
+			}
+
+			int64_t index = *(int64_t*)(it->key().data());
+
+			rocksdb::Slice value = it->value();
+
+			get_data(req.queue, index, value.data(), value.size(), rsp);
+
+			it->Next();
+		}
+
+	}
+
+	return S_OK;
+}
+
+
+int StorageStateMachine::getQueueData(const vector<QueueIndex> &req, vector<QueueRsp> &rsp)
+{
+	for(auto &r : req)
+	{
+		auto handle = getQueue(r.queue);
+		if (!handle)
+		{
+			TLOG_ERROR("queue:" << r.queue << ", queue not exists!" << endl);
+			return S_QUEUE_NOT_EXIST;
+		}
+
+		string value;
+
+		auto s = _db->Get(rocksdb::ReadOptions(), handle, rocksdb::Slice((const char*)&r.index, sizeof(r.index)), &value);
+		if (s.ok())
+		{
+			get_data(r.queue, r.index, value.data(), value.size(), rsp);
+		}
+		else if (s.IsNotFound())
+		{
+			continue;
+		}
+		else
+		{
+			TLOG_ERROR("Get: " << r.queue << ", index: " << index << ", error:" << s.ToString() << endl);
+
+			return S_ERROR;
+		}
 	}
 	return S_OK;
 }
@@ -1885,250 +1990,283 @@ void StorageStateMachine::onCreateQueue(TarsInputStream<> &is, int64_t appliedIn
 	}
 }
 
-void StorageStateMachine::StorageStateMachine::onDeleteData(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+void StorageStateMachine::onDeleteQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
 {
-	string queue;
-	int64_t index;
-
-	is.read(queue, 1, false);
-	is.read(index, 2, false);
-
-	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", queue :" << queue << ", index:" << index << endl);
-
-	int ret;
-
-	auto handle = getQueue(queue);
-
-	if(!handle)
-	{
-		TLOG_ERROR("queue:" << queue << ", queue not exists" << endl);
-
-		ret = S_QUEUE_NOT_EXIST;
-	}
-	else
-	{
-		rocksdb::WriteBatch batch;
-
-		batch.Delete(handle, rocksdb::Slice((const char*)&index, sizeof(index)));
-
-		writeBatch(batch, appliedIndex);
-
-		ret = S_OK;
-	}
-
-	if(callback)
-	{
-		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
-
-		Storage::async_response_deleteData(callback->getCurrentPtr(), ret);
-	}
-}
-
-void StorageStateMachine::onPushBack(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
-{
-	QueueReq req;
+	vector<QueueIndex> req;
 
 	is.read(req, 1, false);
 
-	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", buffer size:" << req.queue.length() << endl);
+	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", delete size:" << req.size() << endl);
+	rocksdb::WriteBatch batch;
 
 	int ret;
 
-	auto handle = getQueue(req.queue);
-
-	if(!handle)
+	for(auto &r : req)
 	{
-		TLOG_ERROR("queue:" << req.queue << ", queue not exists" << endl);
+		auto handle = getQueue(r.queue);
 
-		ret = S_QUEUE_NOT_EXIST;
-	}
-	else
-	{
-		rocksdb::WriteBatch batch;
+		if (!handle)
+		{
+			TLOG_ERROR("queue:" << r.queue << ", queue not exists" << endl);
 
-		batch.Put(handle, rocksdb::Slice((const char*)&appliedIndex, sizeof(appliedIndex)), rocksdb::Slice(req.data.data(), req.data.size()));
-
-		writeBatch(batch, appliedIndex);
-
-		ret = S_OK;
-	}
-
-	if(callback)
-	{
-		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
-
-		Storage::async_response_push_back(callback->getCurrentPtr(), ret);
-	}
-}
-
-void StorageStateMachine::onPushFront(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
-{
-	QueueReq req;
-
-	is.read(req, 1, false);
-
-	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", buffer size:" << req.queue.length() << endl);
-
-	int ret;
-
-	auto handle = getQueue(req.queue);
-
-	if(!handle)
-	{
-		TLOG_ERROR("queue:" << req.queue << ", queue not exists" << endl);
-
-		ret = S_QUEUE_NOT_EXIST;
-	}
-	else
-	{
-		//最小值
-		auto minAppliedIndex = -appliedIndex;
-
-		rocksdb::WriteBatch batch;
-
-		batch.Put(handle, rocksdb::Slice((const char*)&minAppliedIndex, sizeof(minAppliedIndex)), rocksdb::Slice(req.data.data(), req.data.size()));
-
-		writeBatch(batch, appliedIndex);
-
-		ret = S_OK;
-
-	}
-
-	if(callback)
-	{
-		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
-
-		Storage::async_response_push_front(callback->getCurrentPtr(), ret);
-	}
-}
-
-void StorageStateMachine::onPopBack(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
-{
-	string queue;
-
-	is.read(queue, 1, false);
-
-	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", queue:" << queue << endl);
-
-	int ret;
-
-	auto handle = getQueue(queue);
-
-	auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
-
-	it->SeekToLast();
-
-	QueueRsp rsp;
-	rsp.index = appliedIndex;
-
-	if(!it->Valid())
-	{
-		TLOG_DEBUG("queue:" << queue << " no data" << endl);
-		ret = S_NO_DATA;
-	}
-	else
-	{
-		rocksdb::Slice value = it->value();
-		rsp.data.assign(value.data(), value.data() + value.size());
-
-		rocksdb::WriteBatch batch;
-
-		batch.Delete(handle, rocksdb::Slice((const char*)&appliedIndex, sizeof(appliedIndex)));
-
-		writeBatch(batch, appliedIndex);
-
-		ret = S_OK;
-	}
-
-	if(callback)
-	{
-		TLOG_DEBUG("queue:" << queue << " succ, buff size:" << rsp.data.size() << endl);
-		Storage::async_response_pop_back(callback->getCurrentPtr(), ret, rsp);
-	}
-}
-
-void StorageStateMachine::onPopFront(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
-{
-	string queue;
-
-	is.read(queue, 1, false);
-
-	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", queue:" << queue << endl);
-
-	int ret;
-
-	auto handle = getQueue(queue);
-
-	auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
-
-	it->SeekToFirst();
-
-	QueueRsp rsp;
-	rsp.index = appliedIndex;
-	if(!it->Valid())
-	{
-		TLOG_DEBUG("queue:" << queue << " no data" << endl);
-		ret = S_NO_DATA;
-	}
-	else
-	{
-		rocksdb::Slice value = it->value();
-		rsp.data.assign(value.data(), value.data() + value.size());
-
-		rocksdb::WriteBatch batch;
-
-		batch.Delete(handle, rocksdb::Slice((const char*)&appliedIndex, sizeof(appliedIndex)));
-
-		writeBatch(batch, appliedIndex);
-
-		ret = S_OK;
-	}
-
-	if(callback)
-	{
-		TLOG_DEBUG("queue:" << queue << " succ, buff size:" << rsp.data.size() << endl);
-		Storage::async_response_pop_front(callback->getCurrentPtr(), ret, rsp);
-	}
-}
-
-void StorageStateMachine::onClearQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
-{
-	string queue;
-
-	is.read(queue, 1, false);
-
-	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", queue:" << queue << endl);
-
-	int ret;
-
-	auto handle = getQueue(queue);
-
-	if(!handle)
-	{
-		TLOG_ERROR("queue:" << queue << ", queue not exists" << endl);
-
-		ret = S_QUEUE_NOT_EXIST;
-	}
-	else
-	{
-		rocksdb::WriteBatch batch;
-
-		auto_ptr<rocksdb::Iterator> itFirst(_db->NewIterator(rocksdb::ReadOptions(), handle));
-		itFirst->SeekToFirst();
-
-		if(itFirst->Valid()) {
-			batch.DeleteRange(handle, itFirst->key(), rocksdb::Slice());
+			ret = S_QUEUE_NOT_EXIST;
+			break;
 		}
+		else
+		{
+			batch.Delete(handle, rocksdb::Slice((const char*)&r.index, sizeof(r.index)));
 
-		writeBatch(batch, appliedIndex);
-
-		ret = S_OK;
+			ret = S_OK;
+		}
 	}
+
+	if(ret != S_OK)
+	{
+		batch.Clear();
+	}
+
+	writeBatch(batch, appliedIndex);
 
 	if(callback)
 	{
 		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
 
-		Storage::async_response_clearQueue(callback->getCurrentPtr(), ret);
+		Storage::async_response_deleteQueueData(callback->getCurrentPtr(), ret);
+	}
+}
+
+STORAGE_RT StorageStateMachine::queueBatch(rocksdb::WriteBatch &batch, const vector<QueuePushReq> &req)
+{
+	int ret;
+	unordered_map<string, int64_t> backIndex;
+	unordered_map<string, int64_t> frontIndex;
+
+	for(auto &r : req)
+	{
+		auto handle = getQueue(r.queue);
+
+		if (!handle)
+		{
+			TLOG_ERROR("queue:" << r.queue << ", queue not exists" << endl);
+
+			ret = S_QUEUE_NOT_EXIST;
+			break;
+		}
+		else
+		{
+			int64_t index = 0;
+
+			if(r.back)
+			{
+				auto it = backIndex.find(r.queue);
+
+				if(it == backIndex.end())
+				{
+					auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+
+					it->SeekToLast();
+
+					if (it->Valid())
+					{
+						index = *(int64_t*)(it->key().data()) + 1;
+					}
+
+					backIndex[r.queue] = index;
+				}
+				else
+				{
+					++it->second;
+
+					index = it->second;
+				}
+
+			}
+			else
+			{
+				auto it = frontIndex.find(r.queue);
+
+				int64_t index = 0;
+
+				if(it == frontIndex.end())
+				{
+					auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+
+					it->SeekToLast();
+
+					if (it->Valid())
+					{
+						index = *(int64_t*)(it->key().data()) - 1;
+					}
+
+					frontIndex[r.queue] = index;
+				}
+				else
+				{
+					--it->second;
+
+					index = it->second;
+				}
+			}
+
+			TarsOutputStream<> buff;
+			QueueData qd;
+			if(r.expireTime > 0)
+			{
+				qd.expireTime = r.expireTime + TNOW;
+			}
+
+			qd.data = std::move(r.data);
+
+			qd.writeTo(buff);
+
+			batch.Put(handle, rocksdb::Slice((const char*)&index, sizeof(index)),
+					rocksdb::Slice(buff.getBuffer(), buff.getLength()));
+
+			ret = S_OK;
+		}
+	}
+
+	if(ret != S_OK)
+	{
+		batch.Clear();
+	}
+
+	return (STORAGE_RT)ret;
+}
+
+void StorageStateMachine::onPushQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	vector<QueuePushReq> req;
+
+	is.read(req, 1, false);
+
+	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", push size:" << req.size() << endl);
+
+	int ret;
+	rocksdb::WriteBatch batch;
+
+	ret = queueBatch(batch, req);
+
+	writeBatch(batch, appliedIndex);
+
+	if(callback)
+	{
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
+
+		Storage::async_response_push_queue(callback->getCurrentPtr(), ret);
+	}
+}
+
+void StorageStateMachine::onPopQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	QueuePopReq req;
+
+	is.read(req, 1, false);
+
+	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", queue:" << req.queue << endl);
+
+	int ret = S_OK;
+
+	rocksdb::WriteBatch batch;
+
+	vector<QueueRsp> rsp;
+	auto handle = getQueue(req.queue);
+	if(!handle)
+	{
+		TLOG_ERROR("queue:" << req.queue << ", queue not exists" << endl);
+
+		ret = S_QUEUE_NOT_EXIST;
+	}
+	else
+	{
+		auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+
+		if (req.back)
+		{
+			it->SeekToLast();
+
+			while ((int)rsp.size() < req.count)
+			{
+				if (!it->Valid())
+				{
+					TLOG_DEBUG("queue:" << req.queue << " no data, size:" << rsp.size() << ", count size:" << req.count
+										<< endl);
+					break;
+				}
+
+				int64_t index = *(int64_t*)(it->key().data());
+
+				rocksdb::Slice value = it->value();
+
+				get_data(req.queue, index, value.data(), value.size(), rsp);
+
+				batch.Delete(handle, rocksdb::Slice((const char *)&index, sizeof(int64_t)));
+
+				it->Prev();
+			}
+		}
+		else
+		{
+			it->SeekToFirst();
+
+			while ((int)rsp.size() < req.count)
+			{
+				if (!it->Valid())
+				{
+					TLOG_DEBUG("queue:" << req.queue << " no data, size:" << rsp.size() << ", count size:" << req.count
+										<< endl);
+					break;
+				}
+
+				int64_t index = *(int64_t*)(it->key().data());
+				rocksdb::Slice value = it->value();
+
+				get_data(req.queue, index, value.data(), value.size(), rsp);
+
+				batch.Delete(handle, rocksdb::Slice((const char *)&index, sizeof(int64_t)));
+
+				it->Next();
+			}
+		}
+	}
+
+	writeBatch(batch, appliedIndex);
+
+	if(callback)
+	{
+		TLOG_DEBUG("queue:" << req.queue << " succ, buff size:" << rsp.size() << endl);
+		Storage::async_response_pop_queue(callback->getCurrentPtr(), ret, rsp);
+	}
+}
+
+void StorageStateMachine::onBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	BatchDataReq req;
+	is.read(req, 1, false);
+
+	rocksdb::WriteBatch batch;
+
+	int ret;
+	BatchDataRsp rsp;
+
+	ret = setBatch(batch, req.sData, rsp.sRsp);
+
+	if(ret == S_OK)
+	{
+		ret = updateBatch(batch, req.uData);
+	}
+
+	if(ret == S_OK)
+	{
+		ret = queueBatch(batch, req.qData);
+	}
+
+	writeBatch(batch, appliedIndex);
+
+	if(callback)
+	{
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
+
+		Storage::async_response_doBatch(callback->getCurrentPtr(), ret, rsp);
 	}
 }
