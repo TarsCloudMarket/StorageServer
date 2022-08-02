@@ -2015,18 +2015,6 @@ int StorageStateMachine::get_queue(const QueuePopReq &req, vector<QueueRsp> &rsp
 	return S_OK;
 }
 
-int StorageStateMachine::getQueueSize(const string &queue, tars::Int64 &size)
-{
-	auto handle = getQueue(queue);
-	if (!handle)
-	{
-		TLOG_ERROR("queue:" << queue << ", queue not exists!" << endl);
-		return S_QUEUE_NOT_EXIST;
-	}
-
-	return S_OK;
-}
-
 int StorageStateMachine::getQueueData(const vector<QueueIndex> &req, vector<QueueRsp> &rsp)
 {
 	for(auto &r : req)

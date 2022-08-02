@@ -145,16 +145,6 @@ public:
 	 */
 	virtual int doBatch(const BatchDataReq &req, BatchDataRsp &rsp, CurrentPtr current);
 
-	/**
-	 * 获取队列大致元素个数
-	 * @param opt
-	 * @param queue
-	 * @param size
-	 * @param current
-	 * @return
-	 */
-	virtual int getQueueSize(const Options &opt, const string &queue, tars::Int64  &size, CurrentPtr current);
-
 protected:
 
 	shared_ptr<RaftNode>    _raftNode;

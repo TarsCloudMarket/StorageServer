@@ -171,14 +171,6 @@ public:
 	int getQueueData(const vector<QueueIndex> &req, vector<QueueRsp> &rsp);
 
 	/**
-	 * 队列大小
-	 * @param queue
-	 * @param size
-	 * @return
-	 */
-	int getQueueSize(const string &queue, tars::Int64 &size);
-
-	/**
 	 * 关闭数据库
 	 */
 	void close();

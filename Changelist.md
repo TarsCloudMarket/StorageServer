@@ -5,9 +5,11 @@
 ### cn
 - 增加了队列模式
 - 增加全局遍历(不指定mkey)
+- 增加批量写操作(table/queue: doBatch)
 ### en
 - add queue mode
 - add trans global
+- add batch write(table/queue: doBatch)
 
 ## v1.0.2 20220725
 
