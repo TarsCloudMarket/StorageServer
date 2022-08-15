@@ -33,7 +33,7 @@ public:
 	 * @param current
 	 * @return
 	 */
-	virtual int listTable(vector<string> &tables, CurrentPtr current);
+	virtual int listTable(const Options &options, vector<string> &tables, CurrentPtr current);
 
     /**
      * 是否有数据
@@ -114,7 +114,7 @@ public:
 	 * @param current
 	 * @return
 	 */
-	virtual int listQueue(vector<string> &queue, CurrentPtr current);
+	virtual int listQueue(const Options &options, vector<string> &queue, CurrentPtr current);
 
 	/**
 	 * 队列放入数据

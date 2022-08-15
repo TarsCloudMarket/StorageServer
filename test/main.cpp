@@ -2551,6 +2551,8 @@ TEST_F(StorageUnitTest, TestList)
 		prx->createTable("test2");
 		prx->createTable("test3");
 
+		prx->createQueue("test3");
+
 		raftTest->stopAll();
 	}
 
@@ -2559,12 +2561,20 @@ TEST_F(StorageUnitTest, TestList)
 
 		StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
 
+		Options options;
+		options.leader = true;
 		vector<string> tables;
-		prx->listTable(tables);
+		prx->listTable(options, tables);
 
 		LOG_CONSOLE_DEBUG << TC_Common::tostr(tables.begin(), tables.end(), ", ") << endl;
 
 		ASSERT_TRUE(tables.size() == 3);
+
+		vector<string> queues;
+		prx->listQueue(options, queues);
+		ASSERT_TRUE(queues.size() == 1);
+		ASSERT_TRUE(queues[0] == "test3");
+
 		raftTest->waitCluster();
 		raftTest->stopAll();
 

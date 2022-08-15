@@ -407,7 +407,7 @@ void StorageStateMachine::open(const string &dbDir)
 					c.options.comparator = new StorageKeyComparator();
 					c.options.compaction_filter = new TTLCompactionFilter();
 
-					_tables.push_back(c.name);
+					_tables.push_back(c.name.substr(2));
 
 				}
 				else
@@ -415,7 +415,7 @@ void StorageStateMachine::open(const string &dbDir)
 					c.options.comparator = new QueueKeyComparator();
 					c.options.compaction_filter = NULL;
 
-					_queues.push_back(c.name);
+					_queues.push_back(c.name.substr(2));
 				}
 			}
 
@@ -1551,7 +1551,7 @@ void StorageStateMachine::onCreateTable(TarsInputStream<> &is, int64_t appliedIn
 		{
 			std::lock_guard<std::mutex> lock(_mutex);
 			_column_familys[table] = handle;
-			_tables.push_back(table);
+			_tables.push_back(table.substr(2));
 		}
 		if(callback)
 		{
@@ -2106,7 +2106,7 @@ void StorageStateMachine::onCreateQueue(TarsInputStream<> &is, int64_t appliedIn
 		{
 			std::lock_guard<std::mutex> lock(_mutex);
 			_column_familys[queue] = handle;
-			_queues.push_back(queue);
+			_queues.push_back(queue.substr(2));
 		}
 		if(callback)
 		{

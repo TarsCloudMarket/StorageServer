@@ -39,8 +39,13 @@ int StorageImp::createTable(const string &table, CurrentPtr current)
 	return 0;
 }
 
-int StorageImp::listTable(vector<string> &tables, CurrentPtr current)
+int StorageImp::listTable(const Options &options, vector<string> &tables, CurrentPtr current)
 {
+	if(options.leader && !_raftNode->isLeader())
+	{
+		_raftNode->forwardToLeader(current);
+		return 0;
+	}
 	return _stateMachine->listTable(tables);
 }
 
@@ -266,8 +271,13 @@ int StorageImp::createQueue(const string &queue, CurrentPtr current)
 	return 0;
 }
 
-int StorageImp::listQueue(vector<string> &queues, CurrentPtr current)
+int StorageImp::listQueue(const Options &options, vector<string> &queues, CurrentPtr current)
 {
+	if(options.leader && !_raftNode->isLeader())
+	{
+		_raftNode->forwardToLeader(current);
+		return 0;
+	}
 	return _stateMachine->listQueue(queues);
 }
 

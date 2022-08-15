@@ -176,7 +176,7 @@ interface Storage
      * 获取所有表
      * @return int, S_OK: 成功, <0: 失败
      */
-    int listTable(out vector<string> tables);
+    int listTable(Options opt, out vector<string> tables);
 
     /**
      * 是否有数据
@@ -258,7 +258,7 @@ interface Storage
      * 获取所有队列
      * @return int, S_OK: 成功, <0: 失败
      */
-    int listQueue(out vector<string> queues);
+    int listQueue(Options opt, out vector<string> queues);
     
     /**
      * 放入数据到队列
