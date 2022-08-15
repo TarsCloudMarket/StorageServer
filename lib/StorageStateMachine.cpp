@@ -407,11 +407,15 @@ void StorageStateMachine::open(const string &dbDir)
 					c.options.comparator = new StorageKeyComparator();
 					c.options.compaction_filter = new TTLCompactionFilter();
 
+					_tables.push_back(c.name);
+
 				}
 				else
 				{
 					c.options.comparator = new QueueKeyComparator();
 					c.options.compaction_filter = NULL;
+
+					_queues.push_back(c.name);
 				}
 			}
 
@@ -1547,6 +1551,7 @@ void StorageStateMachine::onCreateTable(TarsInputStream<> &is, int64_t appliedIn
 		{
 			std::lock_guard<std::mutex> lock(_mutex);
 			_column_familys[table] = handle;
+			_tables.push_back(table);
 		}
 		if(callback)
 		{
@@ -2101,6 +2106,7 @@ void StorageStateMachine::onCreateQueue(TarsInputStream<> &is, int64_t appliedIn
 		{
 			std::lock_guard<std::mutex> lock(_mutex);
 			_column_familys[queue] = handle;
+			_queues.push_back(queue);
 		}
 		if(callback)
 		{
@@ -2388,4 +2394,22 @@ void StorageStateMachine::onBatch(TarsInputStream<> &is, int64_t appliedIndex, c
 
 		Storage::async_response_doBatch(callback->getCurrentPtr(), ret, rsp);
 	}
+}
+
+int StorageStateMachine::listTable(vector<string> &tables)
+{
+	std::lock_guard<std::mutex> lock(_mutex);
+
+	tables = _tables;
+
+	return S_OK;
+}
+
+int StorageStateMachine::listQueue(vector<string> &queues)
+{
+	std::lock_guard<std::mutex> lock(_mutex);
+
+	queues = _queues;
+
+	return S_OK;
 }

@@ -39,6 +39,11 @@ int StorageImp::createTable(const string &table, CurrentPtr current)
 	return 0;
 }
 
+int StorageImp::listTable(vector<string> &tables, CurrentPtr current)
+{
+	return _stateMachine->listTable(tables);
+}
+
 int StorageImp::has(const Options &options, const StorageKey &skey, CurrentPtr current)
 {
 	if(skey.table.empty())
@@ -259,6 +264,11 @@ int StorageImp::createQueue(const string &queue, CurrentPtr current)
 	});
 
 	return 0;
+}
+
+int StorageImp::listQueue(vector<string> &queues, CurrentPtr current)
+{
+	return _stateMachine->listQueue(queues);
 }
 
 int StorageImp::push_queue(const vector<QueuePushReq> &req, CurrentPtr current)

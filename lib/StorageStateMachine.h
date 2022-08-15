@@ -171,6 +171,20 @@ public:
 	int getQueueData(const vector<QueueIndex> &req, vector<QueueRsp> &rsp);
 
 	/**
+	 *
+	 * @param tables
+	 * @return
+	 */
+	int listTable(vector<string> &tables);
+
+	/**
+	 *
+	 * @param queues
+	 * @return
+	 */
+	int listQueue(vector<string> &queues);
+
+	/**
 	 * 关闭数据库
 	 */
 	void close();
@@ -261,6 +275,10 @@ protected:
 
 	std::mutex		_mutex;
 	unordered_map<string, rocksdb::ColumnFamilyHandle*> _column_familys;
+
+	vector<string> _tables;
+
+	vector<string> _queues;
 
 	unordered_map<string, onapply_type>	_onApply;
 

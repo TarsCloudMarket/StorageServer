@@ -2530,6 +2530,47 @@ TEST_F(StorageUnitTest, TestQueueDoBatch)
 	raftTest->stopAll();
 }
 
+TEST_F(StorageUnitTest, TestList)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	{
+		raftTest->startAll();
+
+		raftTest->waitCluster();
+
+		Options options;
+		options.leader = true;
+
+		int ret;
+		StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+		prx->createTable("test1");
+		prx->createTable("test2");
+		prx->createTable("test3");
+
+		raftTest->stopAll();
+	}
+
+	{
+		raftTest->startAll();
+
+		StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+		vector<string> tables;
+		prx->listTable(tables);
+
+		LOG_CONSOLE_DEBUG << TC_Common::tostr(tables.begin(), tables.end(), ", ") << endl;
+
+		ASSERT_TRUE(tables.size() == 3);
+		raftTest->waitCluster();
+		raftTest->stopAll();
+
+	}
+}
+
 int main(int argc, char** argv)
 {
 	testing::InitGoogleTest(&argc, argv);

@@ -1,4 +1,10 @@
 
+## v1.1.1 20220815
+
+### cn
+- 增加listTable/listQueue 
+### en
+- add listTable/listQueue
 
 ## v1.1.0 20220802
 

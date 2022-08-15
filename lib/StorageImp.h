@@ -27,6 +27,14 @@ public:
      */
     virtual int createTable(const string &table, CurrentPtr current);
 
+	/**
+	 * 列出所有table
+	 * @param queue
+	 * @param current
+	 * @return
+	 */
+	virtual int listTable(vector<string> &tables, CurrentPtr current);
+
     /**
      * 是否有数据
      * @param options
@@ -94,12 +102,19 @@ public:
      */    
     virtual int trans(const Options &options, const PageReq &req, vector<StorageData> &data, CurrentPtr current);
 
-
 	/**
 	 * 创建队列
 	 * @return int, S_OK: 成功, <0: 失败
 	 */
 	virtual int createQueue(const string &queue, CurrentPtr current);
+
+	/**
+	 * 列出所有queue
+	 * @param queue
+	 * @param current
+	 * @return
+	 */
+	virtual int listQueue(vector<string> &queue, CurrentPtr current);
 
 	/**
 	 * 队列放入数据
