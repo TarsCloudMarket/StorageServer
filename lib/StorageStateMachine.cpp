@@ -24,11 +24,13 @@ const string StorageStateMachine::BDEL_TYPE = "m4";
 const string StorageStateMachine::TABLE_TYPE = "m5";
 const string StorageStateMachine::SET_JSON_TYPE = "m6";
 const string StorageStateMachine::BSET_JSON_TYPE = "m7";
+const string StorageStateMachine::DELETE_TABLE_TYPE = "m8";
 
 const string StorageStateMachine::CREATE_QUEUE_TYPE = "q1";
 const string StorageStateMachine::PUSH_QUEUE_TYPE = "q2";
 const string StorageStateMachine::POP_QUEUE_TYPE = "q3";
-const string StorageStateMachine::DEL_QUEUE_TYPE = "q4";
+const string StorageStateMachine::DELDATA_QUEUE_TYPE = "q4";
+const string StorageStateMachine::DELETE_QUEUE_TYPE = "q5";
 
 const string StorageStateMachine::BATCH_DATA = "batch";
 
@@ -158,9 +160,8 @@ protected:
 public:
 	int Compare(const rocksdb::Slice &a, const rocksdb::Slice &b) const
 	{
-		int64_t index1 = tars::tars_ntohll(*(int64_t*)(a.data()));
-
-		int64_t index2 = tars::tars_ntohll(*(int64_t*)(b.data()));
+		int64_t index1 = *(int64_t*)(a.data());
+		int64_t index2 = *(int64_t*)(b.data());
 
 		if(index1 == index2)
 		{
@@ -190,11 +191,13 @@ StorageStateMachine::StorageStateMachine(const string &dataPath, StorageServer *
 	_onApply[TABLE_TYPE] = std::bind(&StorageStateMachine::onCreateTable, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[SET_JSON_TYPE] = std::bind(&StorageStateMachine::onUpdate, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[BSET_JSON_TYPE] = std::bind(&StorageStateMachine::onUpdateBatch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[DELETE_TABLE_TYPE] = std::bind(&StorageStateMachine::onDeleteTable, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 
 	_onApply[CREATE_QUEUE_TYPE] = std::bind(&StorageStateMachine::onCreateQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
-	_onApply[DEL_QUEUE_TYPE] = std::bind(&StorageStateMachine::onDeleteQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[DELDATA_QUEUE_TYPE] = std::bind(&StorageStateMachine::onDeleteDataQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[PUSH_QUEUE_TYPE] = std::bind(&StorageStateMachine::onPushQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[POP_QUEUE_TYPE] = std::bind(&StorageStateMachine::onPopQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[DELETE_QUEUE_TYPE] = std::bind(&StorageStateMachine::onDeleteQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 
 	_onApply[BATCH_DATA] = std::bind(&StorageStateMachine::onBatch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 
@@ -1019,6 +1022,34 @@ void StorageStateMachine::writeBatch(rocksdb::WriteBatch &batch, int64_t applied
 	{
 		TLOG_ERROR("writeBatch error!" << endl);
 		terminate();
+	}
+}
+
+void StorageStateMachine::onDeleteTable(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	string table;
+	is.read(table, 1, false);
+
+	TLOG_DEBUG("table:" << table << endl);
+
+	auto handle = getTable(table);
+
+	if(handle)
+	{
+		{
+			std::lock_guard<std::mutex> lock(_mutex);
+
+			_column_familys.erase(handle->GetName());
+		}
+
+		_db->DropColumnFamily(handle);
+
+		_db->DestroyColumnFamilyHandle(handle);
+	}
+
+	if(callback)
+	{
+		Storage::async_response_deleteTable(callback->getCurrentPtr(), S_OK);
 	}
 }
 
@@ -1946,7 +1977,7 @@ void StorageStateMachine::get_data(const string &queue, int64_t index, const cha
 
 			TarsOutputStream<BufferWriterString> os;
 
-			os.write(StorageStateMachine::DEL_QUEUE_TYPE, 0);
+			os.write(StorageStateMachine::DELDATA_QUEUE_TYPE, 0);
 			os.write(req, 1);
 
 			shared_ptr<ApplyContext> context = std::make_shared<ApplyContext>();
@@ -2117,7 +2148,7 @@ void StorageStateMachine::onCreateQueue(TarsInputStream<> &is, int64_t appliedIn
 	}
 }
 
-void StorageStateMachine::onDeleteQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+void StorageStateMachine::onDeleteDataQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
 {
 	vector<QueueIndex> req;
 
@@ -2232,6 +2263,8 @@ STORAGE_RT StorageStateMachine::queueBatch(rocksdb::WriteBatch &batch, const vec
 					index = it->second;
 				}
 			}
+
+//			LOG_CONSOLE_DEBUG << index << ", " << string(r.data.data(), r.data.size()) << endl;
 
 			TarsOutputStream<> buff;
 			QueueData qd;
@@ -2412,4 +2445,126 @@ int StorageStateMachine::listQueue(vector<string> &queues)
 	queues = _queues;
 
 	return S_OK;
+}
+
+int StorageStateMachine::transQueue(const QueuePageReq &req, vector<QueueRsp> &data)
+{
+	data.clear();
+
+	auto handle = getQueue(req.queue);
+	if(!handle)
+	{
+		TLOG_ERROR("queue:" << req.queue << ", index:" << req.index << ", queue not exists" << endl);
+
+		return S_QUEUE_NOT_EXIST;
+	}
+
+	auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+
+	if(req.forward)
+	{
+		shared_ptr<AutoSlice> k;
+		int64_t *p = new int64_t;
+
+		if(req.index.empty())
+		{
+			*p = std::numeric_limits<int64_t>::min();
+			k = std::make_shared<AutoSlice>((const char *)p, sizeof(int64_t));
+		}
+		else
+		{
+			*p = TC_Common::strto<int64_t>(req.index);
+
+			k = std::make_shared<AutoSlice>((const char *)p, sizeof(int64_t));
+		}
+
+		rocksdb::Slice key(k->data, k->length);
+
+		//从小到大
+		it->Seek(key);
+		while(it->Valid() && (req.limit < 0 || data.size() < req.limit))
+		{
+			int64_t index = *(int64_t*)it->key().data();
+
+			if(!req.include && *p == index)
+			{
+				//不包含检索的第一个数据
+				it->Next();
+				continue;
+			}
+
+			get_data(req.queue, index, it->value().data(), it->value().size(), data);
+
+			it->Next();
+		}
+
+	}
+	else
+	{
+		shared_ptr<AutoSlice> k;
+		int64_t *p = new int64_t;
+		if(req.index.empty())
+		{
+			*p = std::numeric_limits<int64_t>::max();
+			k = std::make_shared<AutoSlice>((const char *)p, sizeof(int64_t));
+		}
+		else
+		{
+			*p = TC_Common::strto<int64_t>(req.index);
+
+			k = std::make_shared<AutoSlice>((const char *)p, sizeof(int64_t));
+		}
+
+		//从大到小
+		it->SeekForPrev(rocksdb::Slice(k->data, k->length));
+
+		while(it->Valid() && (req.limit < 0 || data.size() < req.limit))
+		{
+			int64_t index = *(int64_t*)it->key().data();
+
+			if(!req.include && *p == index)
+			{
+				//不包含检索的第一个数据
+				it->Prev();
+				continue;
+			}
+
+			get_data(req.queue, index, it->value().data(), it->value().size(), data);
+
+			it->Prev();
+		}
+	}
+
+	TLOG_DEBUG("queue:" << req.queue << ", index:" << req.index << ", forward:" << req.forward << ", limit:" << req.limit << ", result size: " << data.size() << endl);
+
+	return S_OK;
+}
+
+
+void StorageStateMachine::onDeleteQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	string queue;
+	is.read(queue, 1, false);
+
+	TLOG_DEBUG("queue:" << queue << endl);
+
+	auto handle = getQueue(queue);
+
+	if(handle)
+	{
+		{
+			std::lock_guard<std::mutex> lock(_mutex);
+
+			_column_familys.erase(handle->GetName());
+		}
+
+		_db->DropColumnFamily(handle);
+
+		_db->DestroyColumnFamilyHandle(handle);
+	}
+
+	if(callback)
+	{
+		Storage::async_response_deleteQueue(callback->getCurrentPtr(), S_OK);
+	}
 }

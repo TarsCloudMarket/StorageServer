@@ -49,6 +49,25 @@ int StorageImp::listTable(const Options &options, vector<string> &tables, Curren
 	return _stateMachine->listTable(tables);
 }
 
+int StorageImp::deleteTable(const string &table, CurrentPtr current)
+{
+	if(table.empty())
+	{
+		return S_TABLE_NAME;
+	}
+	_raftNode->forwardOrReplicate(current, [&](){
+
+		TarsOutputStream<BufferWriterString> os;
+
+		os.write(StorageStateMachine::DELETE_TABLE_TYPE, 0);
+		os.write(table, 1);
+
+		return  os.getByteBuffer();
+	});
+
+	return 0;
+}
+
 int StorageImp::has(const Options &options, const StorageKey &skey, CurrentPtr current)
 {
 	if(skey.table.empty())
@@ -281,6 +300,25 @@ int StorageImp::listQueue(const Options &options, vector<string> &queues, Curren
 	return _stateMachine->listQueue(queues);
 }
 
+int StorageImp::deleteQueue(const string &queue, CurrentPtr current)
+{
+	if(queue.empty())
+	{
+		return S_QUEUE_NAME;
+	}
+	_raftNode->forwardOrReplicate(current, [&](){
+
+		TarsOutputStream<BufferWriterString> os;
+
+		os.write(StorageStateMachine::DELETE_QUEUE_TYPE, 0);
+		os.write(queue, 1);
+
+		return  os.getByteBuffer();
+	});
+
+	return 0;
+}
+
 int StorageImp::push_queue(const vector<QueuePushReq> &req, CurrentPtr current)
 {
 	for(auto &r : req)
@@ -353,7 +391,7 @@ int StorageImp::deleteQueueData(const vector<QueueIndex> &req, CurrentPtr curren
 
 		TarsOutputStream<BufferWriterString> os;
 
-		os.write(StorageStateMachine::DEL_QUEUE_TYPE, 0);
+		os.write(StorageStateMachine::DELDATA_QUEUE_TYPE, 0);
 		os.write(req, 1);
 
 		return  os.getByteBuffer();
@@ -378,6 +416,20 @@ int StorageImp::getQueueData(const Options &options, const vector<QueueIndex> &r
 		return 0;
 	}
 	return _stateMachine->getQueueData(req, rsp);
+}
+
+int StorageImp::transQueue(const Options &options, const QueuePageReq &req, vector<QueueRsp> &data, CurrentPtr current)
+{
+	if(req.queue.empty())
+	{
+		return S_QUEUE_NAME;
+	}
+	if(options.leader && !_raftNode->isLeader())
+	{
+		_raftNode->forwardToLeader(current);
+		return 0;
+	}
+	return _stateMachine->transQueue(req, data);
 }
 
 int StorageImp::doBatch(const BatchDataReq &req, BatchDataRsp &rsp, CurrentPtr current)

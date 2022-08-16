@@ -150,6 +150,15 @@ struct QueueIndex
     1 optional long index;                 //在队列中的主索引
 };
 
+struct QueuePageReq
+{
+    0 optional string queue;
+    1 optional string index;               //遍历起始的索引, 之所以用string, 为了支持遍历时include这个参数(为空字符串, 则从头/尾遍历)
+    2 optional int limit = 10;
+    3 optional bool forward = true;
+    4 optional bool include = true;
+};
+
 //批量写各种数据, 一次性成功,要么失败
 struct BatchDataReq
 {
@@ -177,6 +186,12 @@ interface Storage
      * @return int, S_OK: 成功, <0: 失败
      */
     int listTable(Options opt, out vector<string> tables);
+
+    /**
+     * 删除表
+     * @return int, S_OK: 成功, <0: 失败
+     */
+    int deleteTable(string table);
 
     /**
      * 是否有数据
@@ -249,7 +264,7 @@ interface Storage
 
     ///////////////////////////////////////////////////////////////////////////////
     /**
-     * 创建队列
+     * 创建队列(头部index小, 尾部index大)
      * @return int, S_OK: 成功, <0: 失败
      */
     int createQueue(string queue);
@@ -259,7 +274,13 @@ interface Storage
      * @return int, S_OK: 成功, <0: 失败
      */
     int listQueue(Options opt, out vector<string> queues);
-    
+
+    /**
+     * 删除队列
+     * @return int, S_OK: 成功, <0: 失败
+     */
+    int deleteQueue(string queue);
+
     /**
      * 放入数据到队列
      * @return int, S_OK: 成功, <0: 失败
@@ -289,6 +310,12 @@ interface Storage
      * @return int, S_OK: 成功, <0: 失败
      */
     int getQueueData(Options opt, vector<QueueIndex> req, out vector<QueueRsp> rsp);
+
+    /**
+     * 遍历队列, 分页遍历数据, 下一次传入上次返回的index, 第一次indexu传入空
+     * @return int, S_OK: 成功, <0: 失败
+     */
+    int transQueue(Options opt, QueuePageReq req, out vector<QueueRsp> data);
 
     ///////////////////////////////////////////////////////////////////////////////
 

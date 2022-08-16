@@ -35,11 +35,13 @@ public:
 	const static string TABLE_TYPE;
 	const static string SET_JSON_TYPE  ;
 	const static string BSET_JSON_TYPE;
+	const static string DELETE_TABLE_TYPE;
 
 	const static string CREATE_QUEUE_TYPE;
 	const static string PUSH_QUEUE_TYPE;
 	const static string POP_QUEUE_TYPE;
-	const static string DEL_QUEUE_TYPE;
+	const static string DELDATA_QUEUE_TYPE;
+	const static string DELETE_QUEUE_TYPE;
 
 	const static string BATCH_DATA;
 
@@ -185,6 +187,14 @@ public:
 	int listQueue(vector<string> &queues);
 
 	/**
+	 * 遍历队列
+	 * @param req
+	 * @param data
+	 * @return
+	 */
+	int transQueue(const QueuePageReq &req, vector<QueueRsp> &data);
+
+	/**
 	 * 关闭数据库
 	 */
 	void close();
@@ -228,6 +238,7 @@ protected:
 	void onDel(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onDelBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onCreateTable(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onDeleteTable(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 
 	void writeBatch(rocksdb::WriteBatch &batch, int64_t appliedIndex);
 
@@ -257,10 +268,10 @@ protected:
 	string queueName(const string &table) { return "q-" + table; }
 	void get_data(const string &queue, int64_t index, const char *buff, size_t length, vector<QueueRsp> &rsp);
 	void onCreateQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
-	void onDeleteQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onDeleteDataQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onPushQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onPopQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
-
+	void onDeleteQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 
 	void onBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	STORAGE_RT setBatch(rocksdb::WriteBatch &batch, const vector<StorageData> &data, map<StorageKey, int> &rsp);

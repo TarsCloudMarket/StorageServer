@@ -35,7 +35,15 @@ public:
 	 */
 	virtual int listTable(const Options &options, vector<string> &tables, CurrentPtr current);
 
-    /**
+	/**
+	 *
+	 * @param table
+	 * @param current
+	 * @return
+	 */
+	virtual int deleteTable(const string &table, CurrentPtr current);
+
+	/**
      * 是否有数据
      * @param options
      * @param skey
@@ -117,6 +125,14 @@ public:
 	virtual int listQueue(const Options &options, vector<string> &queue, CurrentPtr current);
 
 	/**
+	 *
+	 * @param queue
+	 * @param current
+	 * @return
+	 */
+	virtual int deleteQueue(const string &queue, CurrentPtr current);
+
+	/**
 	 * 队列放入数据
 	 * @return int, S_OK: 成功, <0: 失败
 	 */
@@ -152,6 +168,16 @@ public:
 	 * @return
 	 */
 	virtual int getQueueData(const Options &options, const vector<QueueIndex> &req, vector<QueueRsp> &rsp, CurrentPtr current);
+
+	/**
+	 *
+	 * @param opt
+	 * @param req
+	 * @param data
+	 * @param current
+	 * @return
+	 */
+	virtual int transQueue(const Options &opt, const QueuePageReq &req, vector<QueueRsp> &data, CurrentPtr current);
 
 	/**
 	 * 批量处理写

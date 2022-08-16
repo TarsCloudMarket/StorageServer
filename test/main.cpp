@@ -2544,7 +2544,6 @@ TEST_F(StorageUnitTest, TestList)
 		Options options;
 		options.leader = true;
 
-		int ret;
 		StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
 
 		prx->createTable("test1");
@@ -2580,6 +2579,251 @@ TEST_F(StorageUnitTest, TestList)
 
 	}
 }
+
+TEST_F(StorageUnitTest, TestDeleteTable)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+	int ret;
+
+	Options options;
+	options.leader = true;
+	prx->createTable("test1");
+
+	{
+		//测试读
+		StorageKey skey;
+		skey.table = "test1";
+		skey.mkey = "abc";
+		skey.ukey = "1";
+
+		ret = prx->has(options, skey);
+
+		ASSERT_TRUE(ret == S_NO_DATA);
+
+		//测试写
+		StorageData data;
+		data.skey.table = "test1";
+		data.skey.mkey 	= "abc";
+		data.skey.ukey 	= "1";
+		data.svalue.data= {1,1,2,2,3};
+
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		ret = prx->has(options, skey);
+
+		ASSERT_TRUE(ret == S_OK);
+
+	}
+
+	ret = prx->deleteTable("test1");
+	ASSERT_TRUE(ret == S_OK);
+
+	{
+		//测试读
+		StorageKey skey;
+		skey.table = "test1";
+		skey.mkey = "abc";
+		skey.ukey = "1";
+
+		ret = prx->has(options, skey);
+
+		ASSERT_TRUE(ret == S_TABLE_NOT_EXIST);
+	}
+
+	raftTest->stopAll();
+}
+
+
+TEST_F(StorageUnitTest, TestDeleteQueue)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+	int ret;
+
+	Options options;
+	options.leader = true;
+	prx->createQueue("test1");
+
+	vector<Base::QueuePushReq> pushReq;
+	vector<Base::QueueRsp> rsp;
+
+	QueuePushReq req;
+	req.queue = "test1";
+	req.back = false;
+
+	req.data.assign(10, 'a');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'b');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'c');
+	pushReq.push_back(req);
+
+	ret = prx->push_queue(pushReq);
+
+	ASSERT_TRUE(ret == S_OK);
+
+	Base::QueuePopReq popReq;
+	popReq.queue = "test1";
+	popReq.back = false;
+	popReq.count = 2;
+
+	rsp.clear();
+	ret = prx->get_queue(options, popReq, rsp);
+
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp.size() == 2);
+
+	ret = prx->deleteQueue("test1");
+	ASSERT_TRUE(ret == S_OK);
+
+	rsp.clear();
+	ret = prx->get_queue(options, popReq, rsp);
+
+	ASSERT_TRUE(ret == S_QUEUE_NOT_EXIST);
+
+	raftTest->stopAll();
+}
+
+
+TEST_F(StorageUnitTest, TestTransQueue)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+	int ret;
+
+	Options options;
+	options.leader = true;
+	prx->createQueue("test1");
+
+	vector<Base::QueuePushReq> pushReq;
+	vector<Base::QueueRsp> rsp;
+
+	QueuePushReq req;
+	req.queue = "test1";
+	req.back = true;
+
+	req.data.assign(10, 'a');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'b');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'c');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'd');
+	pushReq.push_back(req);
+
+	req.data.assign(10, 'e');
+	pushReq.push_back(req);
+
+	ret = prx->push_queue(pushReq);
+
+	ASSERT_TRUE(ret == S_OK);
+
+	QueuePageReq pageReq;
+	pageReq.queue = "test1";
+	pageReq.index = "";
+	pageReq.limit = 2;
+	pageReq.forward = true;
+	pageReq.include = false;
+
+	{
+		ret = prx->transQueue(options, pageReq, rsp);
+		ASSERT_TRUE(ret == S_OK);
+		ASSERT_TRUE(rsp.size() == pageReq.limit);
+
+		ASSERT_TRUE(rsp[0].data == pushReq[0].data);
+		ASSERT_TRUE(rsp[1].data == pushReq[1].data);
+
+		pageReq.index = TC_Common::tostr(rsp[rsp.size() - 1].index);
+		rsp.clear();
+		ret = prx->transQueue(options, pageReq, rsp);
+//	for(auto r : rsp)
+//	{
+//		LOG_CONSOLE_DEBUG << r.index << ", " <<  string(r.data.data(), r.data.size())<< endl;
+//	}
+		ASSERT_TRUE(ret == S_OK);
+		ASSERT_TRUE(rsp.size() == 2);
+		ASSERT_TRUE(rsp[0].data == pushReq[2].data);
+		ASSERT_TRUE(rsp[1].data == pushReq[3].data);
+
+		pageReq.include = true;
+		rsp.clear();
+		ret = prx->transQueue(options, pageReq, rsp);
+		ASSERT_TRUE(ret == S_OK);
+		ASSERT_TRUE(rsp.size() == 2);
+		ASSERT_TRUE(rsp[0].data == pushReq[1].data);
+		ASSERT_TRUE(rsp[1].data == pushReq[2].data);
+
+	}
+
+	{
+		pageReq.index = "";
+		pageReq.forward = false;
+		pageReq.limit = 2;
+		pageReq.include = false;
+
+		ret = prx->transQueue(options, pageReq, rsp);
+		ASSERT_TRUE(ret == S_OK);
+		ASSERT_TRUE(rsp.size() == pageReq.limit);
+
+		ASSERT_TRUE(rsp[0].data == pushReq[pushReq.size()-1].data);
+		ASSERT_TRUE(rsp[1].data == pushReq[pushReq.size()-2].data);
+
+		pageReq.index = TC_Common::tostr(rsp[rsp.size()-1].index);
+		rsp.clear();
+		ret = prx->transQueue(options, pageReq, rsp);
+//	for(auto r : rsp)
+//	{
+//		LOG_CONSOLE_DEBUG << r.index << ", " <<  string(r.data.data(), r.data.size())<< endl;
+//	}
+		ASSERT_TRUE(ret == S_OK);
+		ASSERT_TRUE(rsp.size() == 2);
+		ASSERT_TRUE(rsp[0].data == pushReq[pushReq.size()-3].data);
+		ASSERT_TRUE(rsp[1].data == pushReq[pushReq.size()-4].data);
+
+		pageReq.include = true;
+		rsp.clear();
+		ret = prx->transQueue(options, pageReq, rsp);
+		ASSERT_TRUE(ret == S_OK);
+		ASSERT_TRUE(rsp.size() == 2);
+		ASSERT_TRUE(rsp[0].data == pushReq[pushReq.size()-2].data);
+		ASSERT_TRUE(rsp[1].data == pushReq[pushReq.size()-3].data);
+
+	}
+
+	raftTest->stopAll();
+}
+
 
 int main(int argc, char** argv)
 {
