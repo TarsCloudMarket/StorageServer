@@ -1040,6 +1040,8 @@ void StorageStateMachine::onDeleteTable(TarsInputStream<> &is, int64_t appliedIn
 			std::lock_guard<std::mutex> lock(_mutex);
 
 			_column_familys.erase(handle->GetName());
+
+			_tables.erase(std::remove(_tables.begin(), _tables.end(), handle->GetName().substr(2)), _tables.end());
 		}
 
 		_db->DropColumnFamily(handle);
@@ -2556,6 +2558,9 @@ void StorageStateMachine::onDeleteQueue(TarsInputStream<> &is, int64_t appliedIn
 			std::lock_guard<std::mutex> lock(_mutex);
 
 			_column_familys.erase(handle->GetName());
+
+			_queues.erase(std::remove(_queues.begin(), _queues.end(), handle->GetName().substr(2)), _queues.end());
+
 		}
 
 		_db->DropColumnFamily(handle);

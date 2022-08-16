@@ -2551,6 +2551,7 @@ TEST_F(StorageUnitTest, TestList)
 		prx->createTable("test3");
 
 		prx->createQueue("test3");
+		prx->createQueue("test4");
 
 		raftTest->stopAll();
 	}
@@ -2564,8 +2565,6 @@ TEST_F(StorageUnitTest, TestList)
 		options.leader = true;
 		vector<string> tables;
 		prx->listTable(options, tables);
-
-		LOG_CONSOLE_DEBUG << TC_Common::tostr(tables.begin(), tables.end(), ", ") << endl;
 
 		ASSERT_TRUE(tables.size() == 3);
 
@@ -2593,10 +2592,15 @@ TEST_F(StorageUnitTest, TestDeleteTable)
 	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
 
 	int ret;
+	vector<string> tables;
 
 	Options options;
 	options.leader = true;
 	prx->createTable("test1");
+	prx->createTable("test2");
+
+	prx->listTable(options, tables);
+	ASSERT_TRUE(tables.size() == 2);
 
 	{
 		//测试读
@@ -2627,6 +2631,9 @@ TEST_F(StorageUnitTest, TestDeleteTable)
 
 	ret = prx->deleteTable("test1");
 	ASSERT_TRUE(ret == S_OK);
+	tables.clear();
+	prx->listTable(options, tables);
+	ASSERT_TRUE(tables.size() == 1);
 
 	{
 		//测试读
@@ -2658,9 +2665,15 @@ TEST_F(StorageUnitTest, TestDeleteQueue)
 
 	int ret;
 
+	vector<string> queues;
 	Options options;
 	options.leader = true;
 	prx->createQueue("test1");
+	prx->createQueue("test2");
+
+	prx->listQueue(options, queues);
+	ASSERT_TRUE(queues.size() == 2);
+
 
 	vector<Base::QueuePushReq> pushReq;
 	vector<Base::QueueRsp> rsp;
@@ -2695,6 +2708,11 @@ TEST_F(StorageUnitTest, TestDeleteQueue)
 
 	ret = prx->deleteQueue("test1");
 	ASSERT_TRUE(ret == S_OK);
+
+	ASSERT_TRUE(ret == S_OK);
+	queues.clear();
+	prx->listQueue(options, queues);
+	ASSERT_TRUE(queues.size() == 1);
 
 	rsp.clear();
 	ret = prx->get_queue(options, popReq, rsp);
