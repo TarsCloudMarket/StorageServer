@@ -2898,7 +2898,7 @@ TEST_F(StorageUnitTest, TestTransQueue)
 	raftTest->stopAll();
 }
 
-TEST_F(StorageUnitTest, TestTransQueue1)
+TEST_F(StorageUnitTest, TestSetQueueData)
 {
 	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
 	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
@@ -2931,20 +2931,36 @@ TEST_F(StorageUnitTest, TestTransQueue1)
 
 	ASSERT_TRUE(ret == S_OK);
 
-	QueuePageReq pageReq;
-	pageReq.queue = "test1";
-	pageReq.index = "";
-	pageReq.limit = 15;
-	pageReq.forward = false;
-	pageReq.include = false;
+	Base::QueuePopReq popReq;
+	popReq.queue = "test1";
+	popReq.back = false;
 
-	{
-		ret = prx->transQueue(options, pageReq, rsp);
-		ASSERT_TRUE(ret == S_OK);
-		ASSERT_TRUE(rsp.size() == 1);
+	rsp.clear();
+	ret = prx->get_queue(options, popReq, rsp);
 
-	}
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp[0].data == req.data);
 
+	vector<char> v;
+	v.assign(10, 'b');
+	vector<Base::QueueRsp> data;
+	rsp[0].data = v;
+
+	data.push_back(rsp[0]);
+
+	prx->setQueueData(data);
+
+	vector<QueueIndex> indexReq;
+	QueueIndex qi;
+	qi.queue = "test1";
+	qi.index = rsp[0].index;
+
+	indexReq.push_back(qi);
+
+	rsp.clear();
+	ret = prx->getQueueData(options, indexReq, rsp);
+	ASSERT_TRUE(ret == S_OK);
+	ASSERT_TRUE(rsp[0].data == v);
 
 	raftTest->stopAll();
 }

@@ -42,6 +42,7 @@ public:
 	const static string POP_QUEUE_TYPE;
 	const static string DELDATA_QUEUE_TYPE;
 	const static string DELETE_QUEUE_TYPE;
+	const static string SETDATA_QUEUE_TYPE;
 
 	const static string BATCH_DATA;
 
@@ -272,6 +273,7 @@ protected:
 	void onPushQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onPopQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	void onDeleteQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
+	void onSetDataQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 
 	void onBatch(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback);
 	STORAGE_RT setBatch(rocksdb::WriteBatch &batch, const vector<StorageData> &data, map<StorageKey, int> &rsp);

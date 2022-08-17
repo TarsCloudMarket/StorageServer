@@ -31,6 +31,7 @@ const string StorageStateMachine::PUSH_QUEUE_TYPE = "q2";
 const string StorageStateMachine::POP_QUEUE_TYPE = "q3";
 const string StorageStateMachine::DELDATA_QUEUE_TYPE = "q4";
 const string StorageStateMachine::DELETE_QUEUE_TYPE = "q5";
+const string StorageStateMachine::SETDATA_QUEUE_TYPE = "q6";
 
 const string StorageStateMachine::BATCH_DATA = "batch";
 
@@ -199,6 +200,7 @@ StorageStateMachine::StorageStateMachine(const string &dataPath, StorageServer *
 	_onApply[PUSH_QUEUE_TYPE] = std::bind(&StorageStateMachine::onPushQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[POP_QUEUE_TYPE] = std::bind(&StorageStateMachine::onPopQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 	_onApply[DELETE_QUEUE_TYPE] = std::bind(&StorageStateMachine::onDeleteQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+	_onApply[SETDATA_QUEUE_TYPE] = std::bind(&StorageStateMachine::onSetDataQueue, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 
 	_onApply[BATCH_DATA] = std::bind(&StorageStateMachine::onBatch, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 
@@ -2294,6 +2296,64 @@ STORAGE_RT StorageStateMachine::queueBatch(rocksdb::WriteBatch &batch, const vec
 
 	return (STORAGE_RT)ret;
 }
+
+void StorageStateMachine::onSetDataQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
+{
+	vector<QueueRsp> data;
+
+	is.read(data, 1, false);
+	int ret;
+
+	TLOG_DEBUG("queue, appliedIndex:" << appliedIndex << ", set size:" << data.size() << endl);
+
+	rocksdb::WriteBatch batch;
+
+	for(auto &r : data)
+	{
+		auto handle = getQueue(r.queue);
+
+		if (!handle)
+		{
+			TLOG_ERROR("queue:" << r.queue << ", queue not exists" << endl);
+
+			ret = S_QUEUE_NOT_EXIST;
+			break;
+		}
+		else
+		{
+			TarsOutputStream<> buff;
+			QueueData qd;
+			if(r.expireTime > 0)
+			{
+				qd.expireTime = r.expireTime + TNOW;
+			}
+
+			qd.data = std::move(r.data);
+
+			qd.writeTo(buff);
+
+			batch.Put(handle, rocksdb::Slice((const char*)&r.index, sizeof(r.index)),
+					rocksdb::Slice(buff.getBuffer(), buff.getLength()));
+
+			ret = S_OK;
+		}
+	}
+
+	if(ret != S_OK)
+	{
+		batch.Clear();
+	}
+
+	writeBatch(batch, appliedIndex);
+
+	if(callback)
+	{
+		TLOG_DEBUG("appliedIndex:" << appliedIndex << ", response ret:" << etos((STORAGE_RT)ret) << endl);
+
+		Storage::async_response_setQueueData(callback->getCurrentPtr(), ret);
+	}
+}
+
 
 void StorageStateMachine::onPushQueue(TarsInputStream<> &is, int64_t appliedIndex, const shared_ptr<ApplyContext> &callback)
 {

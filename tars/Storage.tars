@@ -313,6 +313,12 @@ interface Storage
     int getQueueData(Options opt, vector<QueueIndex> req, out vector<QueueRsp> rsp);
 
     /**
+     * 设置指定索引的值(数据不存在, 则添加之)
+     * @return int, S_OK: 成功, <0: 失败
+     */
+    int setQueueData(vector<QueueRsp> data);
+
+    /**
      * 遍历队列, 分页遍历数据, 下一次传入上次返回的index, 第一次indexu传入空
      * @return int, S_OK: 成功, <0: 失败
      */

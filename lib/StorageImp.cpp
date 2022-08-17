@@ -418,6 +418,29 @@ int StorageImp::getQueueData(const Options &options, const vector<QueueIndex> &r
 	return _stateMachine->getQueueData(req, rsp);
 }
 
+int StorageImp::setQueueData(const vector<QueueRsp> &data, CurrentPtr current)
+{
+	for(auto &r : data)
+	{
+		if (r.queue.empty())
+		{
+			return S_QUEUE_NAME;
+		}
+	}
+
+	_raftNode->forwardOrReplicate(current, [&](){
+
+		TarsOutputStream<BufferWriterString> os;
+
+		os.write(StorageStateMachine::SETDATA_QUEUE_TYPE, 0);
+		os.write(data, 1);
+
+		return  os.getByteBuffer();
+	});
+
+	return 0;
+}
+
 int StorageImp::transQueue(const Options &options, const QueuePageReq &req, vector<QueueRsp> &data, CurrentPtr current)
 {
 	if(req.queue.empty())

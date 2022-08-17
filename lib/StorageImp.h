@@ -171,6 +171,14 @@ public:
 
 	/**
 	 *
+	 * @param data
+	 * @param current
+	 * @return
+	 */
+	virtual int setQueueData(const vector<QueueRsp> &data, CurrentPtr current);
+
+	/**
+	 *
 	 * @param opt
 	 * @param req
 	 * @param data
