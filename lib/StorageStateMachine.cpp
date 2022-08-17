@@ -49,6 +49,7 @@ public:
 		is.read(expireTime, 0, false);
 		if(expireTime !=0 && expireTime < TNOW)
 		{
+//			LOG_CONSOLE_DEBUG << "TTLCompactionFilter:" << expireTime << endl;
 			//过期了!
 			return true;
 		}
@@ -626,6 +627,8 @@ bool StorageStateMachine::isExpire(TarsInputStream<> &is)
 	int expireTime = 0;
 	is.read(expireTime, 0, false);
 
+	is.reset();
+
 	//过期了!
 	if(expireTime !=0 && expireTime < TNOW)
 	{
@@ -664,7 +667,6 @@ int StorageStateMachine::get(const StorageKey &skey, StorageValue &data)
 		}
 
 		data.readFrom(is);
-
 	}
 	else if (s.IsNotFound()) {
 		TLOG_ERROR("table:" << skey.table << ", mkey:" << skey.mkey << ", ukey:" << skey.ukey << ", no found" << endl);

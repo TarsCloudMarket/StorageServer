@@ -534,7 +534,6 @@ TEST_F(StorageUnitTest, TestStorageSetGetVersion)
 	raftTest->stopAll();
 }
 
-
 TEST_F(StorageUnitTest, TestStorageSetGetTimestamp)
 {
 	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
@@ -587,6 +586,70 @@ TEST_F(StorageUnitTest, TestStorageSetGetTimestamp)
 		data.svalue.timestamp = TC_Common::now2us();
 		ret = prx->set(data);
 		ASSERT_TRUE(ret == S_OK);
+	}
+
+	raftTest->stopAll();
+}
+
+TEST_F(StorageUnitTest, TestStorageSetGetTimestamp1)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	vector<char> v;
+	v.resize(100, 'a');
+	Options options;
+	options.leader = true;
+
+	int ret;
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+	ret = prx->createTable("test");
+	ASSERT_TRUE(ret == 0);
+
+	{
+		//测试写
+		StorageData data;
+		data.skey.table = "test";
+		data.skey.mkey 	= "abc";
+		data.skey.ukey 	= "1";
+		data.svalue.version = 1;
+		data.svalue.expireTime = 0;
+		data.svalue.timestamp = 232323;
+		data.svalue.data= v;
+
+		ret = prx->set(data);
+		ASSERT_TRUE(ret == 0);
+
+		//测试读
+		StorageKey skey;
+		skey.table = "test";
+		skey.mkey = "abc";
+		skey.ukey = "1";
+
+		Base::StorageValue value;
+
+		ret = prx->get(options, skey, value);
+		ASSERT_TRUE(ret == 0);
+		ASSERT_TRUE(value.data == v);
+
+		auto now = TNOW;
+		data.svalue.expireTime = 1000;
+		++data.svalue.timestamp;
+		ret = prx->set(data);
+
+		ASSERT_TRUE(ret == S_OK);
+
+		Base::StorageValue value1;
+		prx->get(options, skey, value1);
+		ASSERT_TRUE(ret == 0);
+
+		ASSERT_TRUE(value1.expireTime >= now);
+
 	}
 
 	raftTest->stopAll();

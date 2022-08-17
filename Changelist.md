@@ -1,14 +1,16 @@
 
-## v1.1.1 20220816
+## v1.1.1 20220817
 
 ### cn
 - 增加listTable/listQueue 
 - 增加deleteTable/deleteQueue
 - 增加transQueue
+- 修复: get data时, expireTime总是为0的bug
 ### en
 - add listTable/listQueue
 - add deleteTable/deleteQueue
 - add transQueue
+- Fix: expireTime always = 0 when get data
 
 ## v1.1.0 20220802
 
