@@ -2785,7 +2785,6 @@ TEST_F(StorageUnitTest, TestDeleteQueue)
 	raftTest->stopAll();
 }
 
-
 TEST_F(StorageUnitTest, TestTransQueue)
 {
 	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
@@ -2848,10 +2847,7 @@ TEST_F(StorageUnitTest, TestTransQueue)
 		pageReq.index = TC_Common::tostr(rsp[rsp.size() - 1].index);
 		rsp.clear();
 		ret = prx->transQueue(options, pageReq, rsp);
-//	for(auto r : rsp)
-//	{
-//		LOG_CONSOLE_DEBUG << r.index << ", " <<  string(r.data.data(), r.data.size())<< endl;
-//	}
+
 		ASSERT_TRUE(ret == S_OK);
 		ASSERT_TRUE(rsp.size() == 2);
 		ASSERT_TRUE(rsp[0].data == pushReq[2].data);
@@ -2883,10 +2879,7 @@ TEST_F(StorageUnitTest, TestTransQueue)
 		pageReq.index = TC_Common::tostr(rsp[rsp.size()-1].index);
 		rsp.clear();
 		ret = prx->transQueue(options, pageReq, rsp);
-//	for(auto r : rsp)
-//	{
-//		LOG_CONSOLE_DEBUG << r.index << ", " <<  string(r.data.data(), r.data.size())<< endl;
-//	}
+
 		ASSERT_TRUE(ret == S_OK);
 		ASSERT_TRUE(rsp.size() == 2);
 		ASSERT_TRUE(rsp[0].data == pushReq[pushReq.size()-3].data);
@@ -2901,6 +2894,57 @@ TEST_F(StorageUnitTest, TestTransQueue)
 		ASSERT_TRUE(rsp[1].data == pushReq[pushReq.size()-3].data);
 
 	}
+
+	raftTest->stopAll();
+}
+
+TEST_F(StorageUnitTest, TestTransQueue1)
+{
+	auto raftTest = std::make_shared<RaftTest<StorageServer>>();
+	raftTest->initialize("Base", "StorageServer", "StorageObj", "storage-log", 22000, 32000);
+	raftTest->createServers(3);
+
+	raftTest->startAll();
+
+	raftTest->waitCluster();
+
+	StoragePrx prx = raftTest->get(0)->node()->getBussLeaderPrx<StoragePrx>();
+
+	int ret;
+
+	Options options;
+	options.leader = true;
+	prx->createQueue("test1");
+
+	vector<Base::QueuePushReq> pushReq;
+	vector<Base::QueueRsp> rsp;
+
+	QueuePushReq req;
+	req.queue = "test1";
+	req.expireTime = 0;
+	req.back = false;
+
+	req.data.assign(10, 'a');
+	pushReq.push_back(req);
+
+	ret = prx->push_queue(pushReq);
+
+	ASSERT_TRUE(ret == S_OK);
+
+	QueuePageReq pageReq;
+	pageReq.queue = "test1";
+	pageReq.index = "";
+	pageReq.limit = 15;
+	pageReq.forward = false;
+	pageReq.include = false;
+
+	{
+		ret = prx->transQueue(options, pageReq, rsp);
+		ASSERT_TRUE(ret == S_OK);
+		ASSERT_TRUE(rsp.size() == 1);
+
+	}
+
 
 	raftTest->stopAll();
 }

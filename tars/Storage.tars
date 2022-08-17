@@ -40,7 +40,7 @@ key[StorageKey, table, mkey, ukey];
 //version timestamp 只有一个能生效, 优先version
 struct StorageValue
 {
-    0 optional int expireTime = 0;  //写数据时: 淘汰时间(相对时间, 秒), ==0 忽略淘汰(不淘汰); 读取时, 该字段为淘汰的绝对时间(秒)
+    0 optional long expireTime = 0;  //写数据时: 淘汰时间(相对时间, 秒), ==0 忽略淘汰(不淘汰); 读取时, 该字段为淘汰的绝对时间(秒)
     1 optional int version = 0;     //版本号, 读取时框架自动返回(不为0), set时需要将读取到的version设置回存储(存储服务发现version不相等则不让写入), 如果version设置为0, 则总是同意写入
     2 optional long timestamp = 0;  //覆盖数据时间戳: ==0忽略这个字段的使用;  >0增加覆盖时间戳判断, 更大的timestamp才能覆盖老数据
     3 optional vector<byte> data;
@@ -116,7 +116,7 @@ struct PageReq
 
 struct QueueData
 {
-    0 optional int expireTime = 0;  //淘汰时间(相对时间, 秒), ==0 忽略淘汰(不淘汰)
+    0 optional long expireTime = 0;  //淘汰时间(相对时间, 秒), ==0 忽略淘汰(不淘汰)
     5 optional vector<byte> data;   //实际数据
 };
 
@@ -125,7 +125,7 @@ struct QueuePushReq
 {
     0 optional string queue;
     1 optional bool   back = true;          //true: back, false: front
-    2 optional int expireTime = 0;          //数据在队列中的超时时间(秒), ==0, 则不超时
+    2 optional long expireTime = 0;          //数据在队列中的超时时间(秒), ==0, 则不超时
     5 optional vector<byte> data;           //数据
 };
 
@@ -141,6 +141,7 @@ struct QueueRsp
 {
     0 optional string queue;
     1 optional long index;                 //在队列中的主索引, 数据在队列中按照index来排序的
+    2 optional long  expireTime;           //超时的绝对时间
     3 optional vector<byte> data;
 };
 

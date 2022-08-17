@@ -1961,6 +1961,7 @@ void StorageStateMachine::get_data(const string &queue, int64_t index, const cha
 		QueueRsp data;
 		data.queue = queue;
 		data.index = index;
+		data.expireTime = qd.expireTime;
 
 		//未过期
 		data.data.swap(qd.data);
@@ -1986,9 +1987,7 @@ void StorageStateMachine::get_data(const string &queue, int64_t index, const cha
 
 			shared_ptr<ApplyContext> context = std::make_shared<ApplyContext>();
 			raftNode->replicate(os.getByteBuffer(), context);
-
 		}
-
 	}
 }
 
