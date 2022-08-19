@@ -30,6 +30,7 @@ int StorageImp::createTable(const string &table, CurrentPtr current)
 
 		TarsOutputStream<BufferWriterString> os;
 
+//		TLOG_DEBUG("type:" << StorageStateMachine::TABLE_TYPE << ", table:" << table << endl);
 		os.write(StorageStateMachine::TABLE_TYPE, 0);
 		os.write(table, 1);
 

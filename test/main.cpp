@@ -2965,6 +2965,32 @@ TEST_F(StorageUnitTest, TestSetQueueData)
 	raftTest->stopAll();
 }
 
+TEST_F(StorageUnitTest, test)
+{
+	string type = "m5";
+	string table = "test";
+
+	TarsOutputStream<BufferWriterString> os;
+	os.write(type, 0);
+	os.write(table, 1);
+
+	string s = os.getByteBuffer();
+
+	LOG_CONSOLE_DEBUG << s.length() << endl;
+
+	string s1 = "\006\001\065\026\tinstalled";
+	LOG_CONSOLE_DEBUG << s1.length() << endl;
+
+	TarsInputStream<> is;
+	is.setBuffer(s1.c_str(), s1.length());
+
+	string type1;
+	string table1;
+	is.read(type1, 0, true);
+	is.read(table1, 1, true);
+
+	LOG_CONSOLE_DEBUG << type1 << ", " << table1 << endl;
+}
 
 int main(int argc, char** argv)
 {
