@@ -583,7 +583,18 @@ void StorageStateMachine::onApply(const char *buff, size_t length, int64_t appli
 	TLOG_DEBUG(type << ", appliedIndex:" << appliedIndex << ", size:" << _onApply.size() << endl);
 
 	auto it = _onApply.find(type);
-	assert(it != _onApply.end());
+
+	if(it == _onApply.end())
+	{
+		TLOG_ERROR(type << " not known, appliedIndex:" << appliedIndex << ", size:" << _onApply.size() << endl);
+
+		assert(it != _onApply.end());
+
+		TC_Common::msleep(100);
+		terminate();
+
+		return;
+	}
 
 	it->second(is, appliedIndex, callback);
 }
