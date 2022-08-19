@@ -17,6 +17,7 @@
 
 using namespace Base;
 
+//这些值一旦指定不能修改!
 const string StorageStateMachine::SET_TYPE  = "m1";
 const string StorageStateMachine::BSET_TYPE = "m2";
 const string StorageStateMachine::DEL_TYPE  = "m3";
@@ -582,7 +583,13 @@ void StorageStateMachine::onApply(const char *buff, size_t length, int64_t appli
 
 	TLOG_DEBUG(type << ", appliedIndex:" << appliedIndex << ", buff size:" << length << endl);
 
-	auto it = _onApply.find(type);
+    //兼容历史版本!!!
+    if(type.size() == 1)
+    {
+        type = "m" + type;
+    }
+
+    auto it = _onApply.find(type);
 
 	if(it == _onApply.end())
 	{
