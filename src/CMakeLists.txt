@@ -5,5 +5,8 @@ gen_server(Base StorageServer tars)
 
 add_dependencies(StorageServer raft)
 
-target_link_libraries(StorageServer storage raft rocksdb snappy -static-gcc -static-libstdc++
-)
+target_link_libraries(StorageServer storage raft rocksdb snappy)
+
+if(UNIX AND NOT APPLE)
+    target_link_libraries(StorageServer -static-libgcc -static-libstdc++)
+endif()
