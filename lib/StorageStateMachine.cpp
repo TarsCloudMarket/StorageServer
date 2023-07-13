@@ -382,7 +382,7 @@ void StorageStateMachine::open(const string &dbDir)
 	rocksdb::Options options;
 	options.create_if_missing = true;
 	options.level_compaction_dynamic_level_bytes = true;
-	options.periodic_compaction_seconds = 3600;
+//	options.periodic_compaction_seconds = 3600;
 
 	std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
 
