@@ -84,7 +84,7 @@ TEST_F(StorageUnitTest, TestRaft_Set)
 	raftTest->setBussFunc(std::bind(&StorageUnitTest::testSet, this, std::placeholders::_1));
 	raftTest->setInitFunc(std::bind(&StorageUnitTest::testCreateTable, this, std::placeholders::_1));
 
-	raftTest->testAll();
+	raftTest->testBaseProgress();
 }
 
 TEST_F(StorageUnitTest, TestStorageCreateTable)

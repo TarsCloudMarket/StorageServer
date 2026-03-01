@@ -12,27 +12,39 @@ else()
     include (/usr/local/tars/cpp/makefile/tars-tools.cmake)
 endif()
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti")
+
+# Auto-detect installed raft version under /usr/local/tars/raft_*
+# Override by passing -DTARS_RAFT_PATH=/path/to/raft to cmake
+if(NOT TARS_RAFT_PATH)
+    file(GLOB _raft_dirs LIST_DIRECTORIES true "/usr/local/tars/raft_*")
+    if(_raft_dirs)
+        list(SORT _raft_dirs)
+        list(GET _raft_dirs -1 TARS_RAFT_PATH)
+    endif()
+endif()
+if(NOT TARS_RAFT_PATH OR NOT EXISTS "${TARS_RAFT_PATH}")
+    message(FATAL_ERROR "Raft library not found. Install raft under /usr/local/tars/raft_* or set -DTARS_RAFT_PATH=<path>")
+endif()
+message(STATUS "Using TARS_RAFT_PATH: ${TARS_RAFT_PATH}")
 
 include_directories(/usr/local/tars/cpp/thirdparty/include)
 link_directories(/usr/local/tars/cpp/thirdparty/lib)
 link_directories(/usr/local/tars/cpp/thirdparty/lib64)
 
 include_directories(tars)
-include_directories(libraft)
-include_directories(libraft/src)
+include_directories(${TARS_RAFT_PATH}/include)
+include_directories(${TARS_RAFT_PATH}/include/rafttest)
 include_directories(lib)
 include_directories(src)
 
-include_directories(${CMAKE_BINARY_DIR}/src/rocksdb/include)
-link_directories(${CMAKE_BINARY_DIR}/src/rocksdb/lib)
-link_directories(${CMAKE_BINARY_DIR}/src/rocksdb/lib64)
+include_directories(${TARS_RAFT_PATH}/thirdparty/include)
+link_directories(${TARS_RAFT_PATH}/lib)
+link_directories(${TARS_RAFT_PATH}/thirdparty/lib)
 
-include_directories(${CMAKE_BINARY_DIR}/src/snappy/include)
-link_directories(${CMAKE_BINARY_DIR}/src/snappy/lib)
-link_directories(${CMAKE_BINARY_DIR}/src/snappy/lib64)
-
-add_subdirectory(libraft)
 add_subdirectory(tars)
 add_subdirectory(lib)
 add_subdirectory(src)

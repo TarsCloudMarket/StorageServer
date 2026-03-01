@@ -61,7 +61,9 @@ public:
      * 对状态机中数据进行snapshot，每个节点本地定时调用
      * @param snapshotDir snapshot数据输出目录
      */
-	virtual void onSaveSnapshot(const string &snapshotDir);
+	virtual int64_t onSaveSnapshot(const string &snapshotDir);
+
+	virtual void updateLastAppliedIndex(int64_t index);
 
 	/**
 	 * 读取snapshot到状态机，节点启动时 或者 节点安装快照后 调用

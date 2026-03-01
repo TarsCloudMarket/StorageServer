@@ -183,8 +183,8 @@ public:
 
 //////////////////////////////////////////////////////////////////////////////////////
 StorageStateMachine::StorageStateMachine(const string &dataPath, StorageServer *server)
+	: StateMachine(dataPath)
 {
-	_raftDataDir = dataPath;
 	_server = server;
 
 	_onApply[SET_TYPE] = std::bind(&StorageStateMachine::onSet, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
@@ -388,7 +388,7 @@ void StorageStateMachine::open(const string &dbDir)
 
 	vector<string> columnFamilies;
 
-	rocksdb::Status status = rocksdb::DB::ListColumnFamilies(options, dbDir, &columnFamilies);
+	rocksdb::Status status = rocksdb::DB::ListColumnFamilies(rocksdb::DBOptions(options), dbDir, &columnFamilies);
 
 	if (columnFamilies.empty())
 	{
@@ -537,7 +537,7 @@ int64_t StorageStateMachine::onLoadData()
 	return lastAppliedIndex;
 }
 
-void StorageStateMachine::onSaveSnapshot(const string &snapshotDir)
+int64_t StorageStateMachine::onSaveSnapshot(const string &snapshotDir)
 {
 	TLOG_DEBUG("onSaveSnapshot:" << snapshotDir << endl);
 
@@ -550,6 +550,39 @@ void StorageStateMachine::onSaveSnapshot(const string &snapshotDir)
 	checkpoint->CreateCheckpoint(snapshotDir);
 
 	delete checkpoint;
+
+	// Read lastAppliedIndex from the snapshot DB to ensure the returned
+	// value is consistent with the snapshot data captured above.
+	int64_t lastAppliedIndex = 0;
+	rocksdb::DB *snapDb = NULL;
+	rocksdb::Options opts;
+	opts.create_if_missing = false;
+	rocksdb::Status rs = rocksdb::DB::OpenForReadOnly(opts, snapshotDir, &snapDb);
+	if(rs.ok())
+	{
+		string value;
+		auto gs = snapDb->Get(rocksdb::ReadOptions(), "lastAppliedIndex", &value);
+		if(gs.ok())
+		{
+			lastAppliedIndex = *(int64_t*)value.c_str();
+		}
+		delete snapDb;
+	}
+	else
+	{
+		TLOG_ERROR("onSaveSnapshot open snapshot db error: " << rs.ToString() << endl);
+	}
+
+	TLOG_DEBUG("onSaveSnapshot lastAppliedIndex:" << lastAppliedIndex << endl);
+
+	return lastAppliedIndex;
+}
+
+void StorageStateMachine::updateLastAppliedIndex(int64_t index)
+{
+	rocksdb::WriteOptions wOption;
+	wOption.sync = true;
+	_db->Put(wOption, "lastAppliedIndex", rocksdb::Slice((const char *)&index, sizeof(index)));
 }
 
 bool StorageStateMachine::onLoadSnapshot(const string &snapshotDir)
@@ -852,7 +885,7 @@ int StorageStateMachine::trans(const PageReq &req, vector<StorageData> &data)
 		return S_TABLE_NOT_EXIST;
 	}
 
-	auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+	unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
 
 	if(req.forward)
 	{
@@ -2021,7 +2054,7 @@ int StorageStateMachine::get_queue(const QueuePopReq &req, vector<QueueRsp> &rsp
 
 	if(req.back)
 	{
-		auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+		unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
 
 		it->SeekToLast();
 
@@ -2044,7 +2077,7 @@ int StorageStateMachine::get_queue(const QueuePopReq &req, vector<QueueRsp> &rsp
 	}
 	else
 	{
-		auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+		unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
 
 		it->SeekToFirst();
 
@@ -2240,7 +2273,7 @@ STORAGE_RT StorageStateMachine::queueBatch(rocksdb::WriteBatch &batch, const vec
 
 				if(it == backIndex.end())
 				{
-					auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+					unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
 
 					it->SeekToLast();
 
@@ -2265,7 +2298,7 @@ STORAGE_RT StorageStateMachine::queueBatch(rocksdb::WriteBatch &batch, const vec
 
 				if(it == frontIndex.end())
 				{
-					auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+					unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
 
 					it->SeekToLast();
 
@@ -2415,7 +2448,7 @@ void StorageStateMachine::onPopQueue(TarsInputStream<> &is, int64_t appliedIndex
 	}
 	else
 	{
-		auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+		unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
 
 		if (req.back)
 		{
@@ -2537,7 +2570,7 @@ int StorageStateMachine::transQueue(const QueuePageReq &req, vector<QueueRsp> &d
 		return S_QUEUE_NOT_EXIST;
 	}
 
-	auto_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
+	unique_ptr<rocksdb::Iterator> it(_db->NewIterator(rocksdb::ReadOptions(), handle));
 
 	if(req.forward)
 	{
